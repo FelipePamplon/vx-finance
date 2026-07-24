@@ -24,7 +24,7 @@ export function createCrudHooks<T extends { id: string }>(
         }
         const { data, error } = await query;
         if (error) throw error;
-        return data as T[];
+        return data as unknown as T[];
       },
     });
   }
@@ -40,7 +40,7 @@ export function createCrudHooks<T extends { id: string }>(
           .select()
           .single();
         if (error) throw error;
-        return data as T;
+        return data as unknown as T;
       },
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey });
@@ -64,7 +64,7 @@ export function createCrudHooks<T extends { id: string }>(
           .select()
           .single();
         if (error) throw error;
-        return data as T;
+        return data as unknown as T;
       },
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey });
