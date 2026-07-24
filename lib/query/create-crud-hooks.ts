@@ -5,6 +5,10 @@ import { toast } from "sonner";
 
 import { createClient } from "@/lib/supabase/client";
 
+// This factory builds CRUD hooks for arbitrary tables without a generated
+// Supabase Database schema type, so supabase-js can't resolve its strict
+// per-table generics here. We deliberately drop to `any` at the query
+// builder boundary and rely on the caller-supplied T for the real typing.
 export function createCrudHooks<T extends { id: string }>(
   table: string,
   options?: { orderBy?: string; ascending?: boolean; select?: string }
@@ -16,7 +20,8 @@ export function createCrudHooks<T extends { id: string }>(
       queryKey,
       queryFn: async () => {
         const supabase = createClient();
-        let query = supabase.from(table).select(options?.select ?? "*");
+        const builder = supabase.from(table) as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+        let query = builder.select(options?.select ?? "*");
         if (options?.orderBy) {
           query = query.order(options.orderBy, {
             ascending: options.ascending ?? false,
@@ -24,7 +29,7 @@ export function createCrudHooks<T extends { id: string }>(
         }
         const { data, error } = await query;
         if (error) throw error;
-        return data as unknown as T[];
+        return data as T[];
       },
     });
   }
@@ -34,13 +39,10 @@ export function createCrudHooks<T extends { id: string }>(
     return useMutation({
       mutationFn: async (values: Partial<T>) => {
         const supabase = createClient();
-        const { data, error } = await supabase
-          .from(table)
-          .insert(values)
-          .select()
-          .single();
+        const builder = supabase.from(table) as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+        const { data, error } = await builder.insert(values).select().single();
         if (error) throw error;
-        return data as unknown as T;
+        return data as T;
       },
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey });
@@ -57,14 +59,14 @@ export function createCrudHooks<T extends { id: string }>(
     return useMutation({
       mutationFn: async ({ id, values }: { id: string; values: Partial<T> }) => {
         const supabase = createClient();
-        const { data, error } = await supabase
-          .from(table)
+        const builder = supabase.from(table) as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+        const { data, error } = await builder
           .update(values)
           .eq("id", id)
           .select()
           .single();
         if (error) throw error;
-        return data as unknown as T;
+        return data as T;
       },
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey });
@@ -81,7 +83,8 @@ export function createCrudHooks<T extends { id: string }>(
     return useMutation({
       mutationFn: async (id: string) => {
         const supabase = createClient();
-        const { error } = await supabase.from(table).delete().eq("id", id);
+        const builder = supabase.from(table) as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+        const { error } = await builder.delete().eq("id", id);
         if (error) throw error;
       },
       onSuccess: () => {
