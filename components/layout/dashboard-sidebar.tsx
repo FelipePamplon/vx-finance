@@ -20,14 +20,14 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/transactions", label: "Fluxo de Caixa", icon: ArrowLeftRight },
-  { href: "/clients", label: "Clientes", icon: Users },
-  { href: "/projects", label: "Projetos", icon: Briefcase },
-  { href: "/categories", label: "Categorias", icon: Tags },
-  { href: "/accounts", label: "Contas Bancárias", icon: Landmark },
-  { href: "/reports", label: "Relatórios", icon: FileBarChart },
-  { href: "/users", label: "Usuários", icon: UserCog },
-  { href: "/settings", label: "Configurações", icon: Settings },
+  { href: "/dashboard/transactions", label: "Fluxo de Caixa", icon: ArrowLeftRight },
+  { href: "/dashboard/clients", label: "Clientes", icon: Users },
+  { href: "/dashboard/projects", label: "Projetos", icon: Briefcase },
+  { href: "/dashboard/categories", label: "Categorias", icon: Tags },
+  { href: "/dashboard/accounts", label: "Contas Bancárias", icon: Landmark },
+  { href: "/dashboard/reports", label: "Relatórios", icon: FileBarChart },
+  { href: "/dashboard/users", label: "Usuários", icon: UserCog },
+  { href: "/dashboard/settings", label: "Configurações", icon: Settings },
 ];
 
 export function DashboardSidebar() {
