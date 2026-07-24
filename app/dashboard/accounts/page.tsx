@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -39,6 +39,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { accountsApi } from "@/hooks/use-accounts";
+import { transactionsApi } from "@/hooks/use-transactions";
 import type { Account, AccountType } from "@/types/database";
 
 const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
@@ -72,9 +73,21 @@ function formatCurrency(value: number) {
 
 export default function AccountsPage() {
   const { data: accounts, isLoading } = accountsApi.useList();
+  const { data: transactions } = transactionsApi.useList();
   const createAccount = accountsApi.useCreate();
   const updateAccount = accountsApi.useUpdate();
   const deleteAccount = accountsApi.useDelete();
+
+  const netPaidByAccount = useMemo(() => {
+    const map = new Map<string, number>();
+    (transactions ?? [])
+      .filter((t) => t.status === "pago" && t.account_id)
+      .forEach((t) => {
+        const delta = t.type === "receita" ? Number(t.amount) : -Number(t.amount);
+        map.set(t.account_id!, (map.get(t.account_id!) ?? 0) + delta);
+      });
+    return map;
+  }, [transactions]);
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Account | null>(null);
@@ -146,7 +159,7 @@ export default function AccountsPage() {
             <TableHead>Banco</TableHead>
             <TableHead>Agência / Conta</TableHead>
             <TableHead>Tipo</TableHead>
-            <TableHead>Saldo</TableHead>
+            <TableHead>Saldo Atual</TableHead>
             <TableHead className="w-16" />
           </TableRow>
         </TableHeader>
@@ -183,7 +196,9 @@ export default function AccountsPage() {
               <TableCell>
                 <Badge variant="secondary">{ACCOUNT_TYPE_LABELS[account.type]}</Badge>
               </TableCell>
-              <TableCell>{formatCurrency(account.balance)}</TableCell>
+              <TableCell>
+                {formatCurrency(account.balance + (netPaidByAccount.get(account.id) ?? 0))}
+              </TableCell>
               <TableCell>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>

@@ -31,22 +31,32 @@ export default async function DashboardPage() {
     .toISOString()
     .slice(0, 10);
 
-  const [{ data: accounts }, { data: yearTransactions }, { data: recentTransactions }] =
-    await Promise.all([
-      supabase.from("accounts").select("balance"),
-      supabase
-        .from("transactions")
-        .select("amount, type, date, category_id, categories(name,color)")
-        .gte("date", twelveMonthsAgo)
-        .lte("date", monthEnd),
-      supabase
-        .from("transactions")
-        .select("id, description, amount, type, date, categories(name)")
-        .order("date", { ascending: false })
-        .limit(8),
-    ]);
+  const [
+    { data: accounts },
+    { data: paidTransactions },
+    { data: yearTransactions },
+    { data: recentTransactions },
+  ] = await Promise.all([
+    supabase.from("accounts").select("balance"),
+    supabase.from("transactions").select("amount, type").eq("status", "pago"),
+    supabase
+      .from("transactions")
+      .select("amount, type, date, category_id, categories(name,color)")
+      .gte("date", twelveMonthsAgo)
+      .lte("date", monthEnd),
+    supabase
+      .from("transactions")
+      .select("id, description, amount, type, date, categories(name)")
+      .order("date", { ascending: false })
+      .limit(8),
+  ]);
 
-  const saldoAtual = (accounts ?? []).reduce((sum, a) => sum + Number(a.balance), 0);
+  const initialBalances = (accounts ?? []).reduce((sum, a) => sum + Number(a.balance), 0);
+  const netPaid = (paidTransactions ?? []).reduce(
+    (sum, t) => sum + (t.type === "receita" ? Number(t.amount) : -Number(t.amount)),
+    0
+  );
+  const saldoAtual = initialBalances + netPaid;
 
   const monthTransactions = (yearTransactions ?? []).filter(
     (t) => t.date >= monthStart && t.date <= monthEnd
