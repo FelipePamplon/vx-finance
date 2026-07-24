@@ -97,20 +97,29 @@ alter table public.transactions enable row level security;
 
 -- Sistema interno (single-tenant): qualquer usuario autenticado pode ler/escrever.
 -- Granularidade por papel (admin/financeiro/socio/leitura) fica para sprint de seguranca avancada.
+drop policy if exists "profiles_select_own" on public.profiles;
 create policy "profiles_select_own" on public.profiles for select using (auth.uid() = id);
+drop policy if exists "profiles_update_own" on public.profiles;
 create policy "profiles_update_own" on public.profiles for update using (auth.uid() = id);
+drop policy if exists "profiles_insert_own" on public.profiles;
 create policy "profiles_insert_own" on public.profiles for insert with check (auth.uid() = id);
 
+drop policy if exists "accounts_all_authenticated" on public.accounts;
 create policy "accounts_all_authenticated" on public.accounts for all
   using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+drop policy if exists "categories_all_authenticated" on public.categories;
 create policy "categories_all_authenticated" on public.categories for all
   using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+drop policy if exists "clients_all_authenticated" on public.clients;
 create policy "clients_all_authenticated" on public.clients for all
   using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+drop policy if exists "projects_all_authenticated" on public.projects;
 create policy "projects_all_authenticated" on public.projects for all
   using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+drop policy if exists "partners_all_authenticated" on public.partners;
 create policy "partners_all_authenticated" on public.partners for all
   using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+drop policy if exists "transactions_all_authenticated" on public.transactions;
 create policy "transactions_all_authenticated" on public.transactions for all
   using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 
