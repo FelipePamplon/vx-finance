@@ -45,6 +45,15 @@ export interface Project {
   clients?: { company: string } | null;
 }
 
+export interface Partner {
+  id: string;
+  name: string;
+  email: string | null;
+  share: number;
+  created_by: string | null;
+  created_at: string;
+}
+
 export interface Transaction {
   id: string;
   description: string;
