@@ -4,7 +4,14 @@ import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ArrowLeftRight, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  ArrowLeftRight,
+  MoreHorizontal,
+  Paperclip,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,26 +50,16 @@ import { accountsApi } from "@/hooks/use-accounts";
 import { categoriesApi } from "@/hooks/use-categories";
 import { clientsApi } from "@/hooks/use-clients";
 import { projectsApi } from "@/hooks/use-projects";
+import {
+  TRANSACTION_STATUS_BADGE_VARIANT as STATUS_BADGE_VARIANT,
+  TRANSACTION_STATUS_LABELS as STATUS_LABELS,
+} from "@/lib/labels";
+import { getAttachmentUrl, uploadAttachment } from "@/lib/storage";
 import type {
   TransactionStatus,
   TransactionType,
   TransactionWithRelations,
 } from "@/types/database";
-
-const STATUS_LABELS: Record<TransactionStatus, string> = {
-  pendente: "Pendente",
-  pago: "Pago",
-  cancelado: "Cancelado",
-};
-
-const STATUS_BADGE_VARIANT: Record<
-  TransactionStatus,
-  "default" | "secondary" | "success" | "destructive"
-> = {
-  pendente: "secondary",
-  pago: "success",
-  cancelado: "destructive",
-};
 
 const transactionSchema = z.object({
   description: z.string().min(2, "Descrição muito curta"),
@@ -120,6 +117,8 @@ export default function TransactionsPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<TransactionWithRelations | null>(null);
   const [typeFilter, setTypeFilter] = useState<"todos" | TransactionType>("todos");
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   const {
     register,
@@ -154,12 +153,14 @@ export default function TransactionsPage() {
 
   function openCreate() {
     setEditing(null);
+    setFile(null);
     reset(defaultValues());
     setOpen(true);
   }
 
   function openEdit(transaction: TransactionWithRelations) {
     setEditing(transaction);
+    setFile(null);
     reset({
       description: transaction.description,
       amount: transaction.amount,
@@ -175,6 +176,17 @@ export default function TransactionsPage() {
   }
 
   async function onSubmit(values: TransactionFormValues) {
+    let attachmentUrl = editing?.attachment_url ?? null;
+
+    if (file) {
+      setUploading(true);
+      try {
+        attachmentUrl = await uploadAttachment(file);
+      } finally {
+        setUploading(false);
+      }
+    }
+
     const payload = {
       description: values.description,
       amount: values.amount,
@@ -185,6 +197,7 @@ export default function TransactionsPage() {
       project_id: values.project_id || null,
       client_id: values.client_id || null,
       status: values.status,
+      attachment_url: attachmentUrl,
     };
 
     if (editing) {
@@ -198,6 +211,11 @@ export default function TransactionsPage() {
   async function handleDelete(transaction: TransactionWithRelations) {
     if (!window.confirm(`Excluir o lançamento "${transaction.description}"?`)) return;
     await deleteTransaction.mutateAsync(transaction.id);
+  }
+
+  async function handleViewAttachment(path: string) {
+    const url = await getAttachmentUrl(path);
+    window.open(url, "_blank", "noopener,noreferrer");
   }
 
   return (
@@ -318,6 +336,14 @@ export default function TransactionsPage() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
+                    {transaction.attachment_url && (
+                      <DropdownMenuItem
+                        onClick={() => handleViewAttachment(transaction.attachment_url!)}
+                      >
+                        <Paperclip className="size-4" />
+                        Ver comprovante
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem onClick={() => openEdit(transaction)}>
                       <Pencil className="size-4" />
                       Editar
@@ -499,9 +525,28 @@ export default function TransactionsPage() {
               </Select>
             </div>
 
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="attachment">Comprovante (opcional)</Label>
+              <Input
+                id="attachment"
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              />
+              {editing?.attachment_url && !file && (
+                <p className="text-xs text-muted-foreground">
+                  Já existe um comprovante anexado. Selecione outro arquivo para substituir.
+                </p>
+              )}
+            </div>
+
             <DialogFooter>
-              <Button type="submit" disabled={isSubmitting}>
-                {editing ? "Salvar alterações" : "Criar lançamento"}
+              <Button type="submit" disabled={isSubmitting || uploading}>
+                {uploading
+                  ? "Enviando comprovante..."
+                  : editing
+                    ? "Salvar alterações"
+                    : "Criar lançamento"}
               </Button>
             </DialogFooter>
           </form>
