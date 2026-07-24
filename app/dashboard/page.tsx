@@ -16,6 +16,23 @@ function formatDate(value: string) {
   return new Date(`${value}T00:00:00`).toLocaleDateString("pt-BR");
 }
 
+interface YearTransactionRow {
+  amount: number;
+  type: "receita" | "despesa";
+  date: string;
+  category_id: string | null;
+  categories: { name: string; color: string } | null;
+}
+
+interface RecentTransactionRow {
+  id: string;
+  description: string;
+  amount: number;
+  type: "receita" | "despesa";
+  date: string;
+  categories: { name: string } | null;
+}
+
 export default async function DashboardPage() {
   const supabase = await createClient();
 
@@ -34,8 +51,8 @@ export default async function DashboardPage() {
   const [
     { data: accounts },
     { data: paidTransactions },
-    { data: yearTransactions },
-    { data: recentTransactions },
+    { data: rawYearTransactions },
+    { data: rawRecentTransactions },
   ] = await Promise.all([
     supabase.from("accounts").select("balance"),
     supabase.from("transactions").select("amount, type").eq("status", "pago"),
@@ -51,6 +68,9 @@ export default async function DashboardPage() {
       .limit(8),
   ]);
 
+  const yearTransactions = (rawYearTransactions ?? []) as unknown as YearTransactionRow[];
+  const recentTransactions = (rawRecentTransactions ?? []) as unknown as RecentTransactionRow[];
+
   const initialBalances = (accounts ?? []).reduce((sum, a) => sum + Number(a.balance), 0);
   const netPaid = (paidTransactions ?? []).reduce(
     (sum, t) => sum + (t.type === "receita" ? Number(t.amount) : -Number(t.amount)),
@@ -58,7 +78,7 @@ export default async function DashboardPage() {
   );
   const saldoAtual = initialBalances + netPaid;
 
-  const monthTransactions = (yearTransactions ?? []).filter(
+  const monthTransactions = yearTransactions.filter(
     (t) => t.date >= monthStart && t.date <= monthEnd
   );
 
@@ -122,7 +142,7 @@ export default async function DashboardPage() {
   }
 
   const cashFlowSeries: CashFlowPoint[] = months.map(({ label, start, end }) => {
-    const inRange = (yearTransactions ?? []).filter((t) => t.date >= start && t.date <= end);
+    const inRange = yearTransactions.filter((t) => t.date >= start && t.date <= end);
     return {
       month: label,
       receita: inRange
@@ -220,13 +240,13 @@ export default async function DashboardPage() {
           <CardTitle>Últimas movimentações</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          {(!recentTransactions || recentTransactions.length === 0) && (
+          {recentTransactions.length === 0 && (
             <p className="text-sm text-muted-foreground">
               Nenhum lançamento cadastrado ainda.
             </p>
           )}
 
-          {recentTransactions?.map((t) => (
+          {recentTransactions.map((t) => (
             <div
               key={t.id}
               className="flex items-center justify-between border-b border-border pb-3 last:border-0 last:pb-0"
