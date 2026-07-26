@@ -4,12 +4,14 @@ import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { toast } from "sonner";
 import {
   ArrowLeftRight,
   MoreHorizontal,
   Paperclip,
   Pencil,
   Plus,
+  Sparkles,
   Trash2,
 } from "lucide-react";
 
@@ -55,6 +57,7 @@ import {
   TRANSACTION_STATUS_LABELS as STATUS_LABELS,
 } from "@/lib/labels";
 import { getAttachmentUrl, uploadAttachment } from "@/lib/storage";
+import { suggestCategory } from "./actions";
 import type {
   TransactionStatus,
   TransactionType,
@@ -119,6 +122,7 @@ export default function TransactionsPage() {
   const [typeFilter, setTypeFilter] = useState<"todos" | TransactionType>("todos");
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
 
   const {
     register,
@@ -216,6 +220,32 @@ export default function TransactionsPage() {
   async function handleViewAttachment(path: string) {
     const url = await getAttachmentUrl(path);
     window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  async function handleSuggestCategory() {
+    const description = watch("description");
+    if (!description || description.trim().length < 2) {
+      toast.error("Digite uma descrição primeiro.");
+      return;
+    }
+
+    setSuggesting(true);
+    try {
+      const categoryId = await suggestCategory(
+        description,
+        filteredCategories.map((c) => ({ id: c.id, name: c.name }))
+      );
+      if (categoryId) {
+        setValue("category_id", categoryId);
+        toast.success("Categoria sugerida pela IA.");
+      } else {
+        toast("Nenhuma sugestão encontrada para essa descrição.");
+      }
+    } catch {
+      toast.error("Erro ao sugerir categoria.");
+    } finally {
+      setSuggesting(false);
+    }
   }
 
   return (
@@ -438,7 +468,20 @@ export default function TransactionsPage() {
               </div>
 
               <div className="flex flex-col gap-2">
-                <Label>Categoria</Label>
+                <div className="flex items-center justify-between">
+                  <Label>Categoria</Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-auto px-2 py-1 text-xs"
+                    onClick={handleSuggestCategory}
+                    disabled={suggesting}
+                  >
+                    <Sparkles className="size-3" />
+                    {suggesting ? "Sugerindo..." : "Sugerir com IA"}
+                  </Button>
+                </div>
                 <Select
                   value={watchedCategoryId}
                   onValueChange={(value) => setValue("category_id", value)}
