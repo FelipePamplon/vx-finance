@@ -154,6 +154,24 @@ export default async function DashboardPage() {
     };
   });
 
+  const recentForAvg = cashFlowSeries.slice(-3);
+  const avgReceita =
+    recentForAvg.reduce((sum, m) => sum + m.receita, 0) / (recentForAvg.length || 1);
+  const avgDespesa =
+    recentForAvg.reduce((sum, m) => sum + m.despesa, 0) / (recentForAvg.length || 1);
+
+  const projectedPoints: CashFlowPoint[] = Array.from({ length: 3 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() + i + 1, 1);
+    return {
+      month: d.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" }),
+      receita: avgReceita,
+      despesa: avgDespesa,
+      projected: true,
+    };
+  });
+
+  const cashFlowWithProjection = [...cashFlowSeries, ...projectedPoints];
+
   const categoryTotalsMap = new Map<string, CategorySlice>();
   monthTransactions
     .filter((t) => t.type === "despesa" && t.categories)
@@ -218,10 +236,13 @@ export default async function DashboardPage() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Fluxo de Caixa · últimos 12 meses</CardTitle>
+            <CardTitle>Fluxo de Caixa · 12 meses + projeção</CardTitle>
           </CardHeader>
           <CardContent>
-            <CashFlowChart data={cashFlowSeries} />
+            <CashFlowChart
+              data={cashFlowWithProjection}
+              projectionStartMonth={projectedPoints[0]?.month}
+            />
           </CardContent>
         </Card>
 

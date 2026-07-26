@@ -4,6 +4,8 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  ReferenceArea,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -14,13 +16,22 @@ export interface CashFlowPoint {
   month: string;
   receita: number;
   despesa: number;
+  projected?: boolean;
 }
 
 function formatCurrency(value: number) {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-export function CashFlowChart({ data }: { data: CashFlowPoint[] }) {
+export function CashFlowChart({
+  data,
+  projectionStartMonth,
+}: {
+  data: CashFlowPoint[];
+  projectionStartMonth?: string;
+}) {
+  const lastMonth = data[data.length - 1]?.month;
+
   return (
     <ResponsiveContainer width="100%" height={280}>
       <AreaChart data={data} margin={{ left: 0, right: 12, top: 12, bottom: 0 }}>
@@ -62,6 +73,28 @@ export function CashFlowChart({ data }: { data: CashFlowPoint[] }) {
           labelStyle={{ color: "#94a3b8" }}
           formatter={(value: number) => formatCurrency(value)}
         />
+        {projectionStartMonth && lastMonth && (
+          <>
+            <ReferenceArea
+              x1={projectionStartMonth}
+              x2={lastMonth}
+              fill="#c9a227"
+              fillOpacity={0.06}
+              strokeOpacity={0}
+            />
+            <ReferenceLine
+              x={projectionStartMonth}
+              stroke="#c9a227"
+              strokeDasharray="4 4"
+              label={{
+                value: "Projeção",
+                position: "insideTopRight",
+                fill: "#c9a227",
+                fontSize: 11,
+              }}
+            />
+          </>
+        )}
         <Area
           type="monotone"
           dataKey="receita"

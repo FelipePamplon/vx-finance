@@ -21,6 +21,7 @@ import {
   TRANSACTION_STATUS_BADGE_VARIANT as STATUS_BADGE_VARIANT,
   TRANSACTION_STATUS_LABELS as STATUS_LABELS,
 } from "@/lib/labels";
+import { DreView } from "@/components/reports/dre-view";
 import type { TransactionType, TransactionWithRelations } from "@/types/database";
 
 function todayISO() {
@@ -125,6 +126,7 @@ export default function ReportsPage() {
   const [dateFrom, setDateFrom] = useState(monthStartISO());
   const [dateTo, setDateTo] = useState(todayISO());
   const [typeFilter, setTypeFilter] = useState<"todos" | TransactionType>("todos");
+  const [view, setView] = useState<"fluxo" | "dre">("fluxo");
 
   const filteredRows = useMemo(() => {
     return (transactions ?? []).filter((t) => {
@@ -181,6 +183,25 @@ export default function ReportsPage() {
         </div>
       </div>
 
+      <div className="flex gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant={view === "fluxo" ? "default" : "outline"}
+          onClick={() => setView("fluxo")}
+        >
+          Fluxo de Caixa
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={view === "dre" ? "default" : "outline"}
+          onClick={() => setView("dre")}
+        >
+          DRE
+        </Button>
+      </div>
+
       <div className="flex flex-wrap items-end gap-4">
         <div className="flex flex-col gap-2">
           <Label htmlFor="dateFrom">De</Label>
@@ -215,94 +236,102 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle>Entradas</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-xl font-semibold text-success">
-              {formatCurrency(summary.entradas)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle>Saídas</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-xl font-semibold text-destructive">
-              {formatCurrency(summary.saidas)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle>Resultado</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p
-              className={`text-xl font-semibold ${summary.resultado >= 0 ? "text-success" : "text-destructive"}`}
-            >
-              {formatCurrency(summary.resultado)}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      {view === "fluxo" && (
+        <>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle>Entradas</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-xl font-semibold text-success">
+                  {formatCurrency(summary.entradas)}
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle>Saídas</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-xl font-semibold text-destructive">
+                  {formatCurrency(summary.saidas)}
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle>Resultado</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p
+                  className={`text-xl font-semibold ${summary.resultado >= 0 ? "text-success" : "text-destructive"}`}
+                >
+                  {formatCurrency(summary.resultado)}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Data</TableHead>
-            <TableHead>Descrição</TableHead>
-            <TableHead>Categoria</TableHead>
-            <TableHead>Conta</TableHead>
-            <TableHead>Valor</TableHead>
-            <TableHead>Status</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {isLoading && (
-            <TableRow>
-              <TableCell colSpan={6} className="text-center text-muted-foreground">
-                Carregando...
-              </TableCell>
-            </TableRow>
-          )}
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Data</TableHead>
+                <TableHead>Descrição</TableHead>
+                <TableHead>Categoria</TableHead>
+                <TableHead>Conta</TableHead>
+                <TableHead>Valor</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading && (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    Carregando...
+                  </TableCell>
+                </TableRow>
+              )}
 
-          {!isLoading && filteredRows.length === 0 && (
-            <TableRow>
-              <TableCell colSpan={6} className="text-center text-muted-foreground">
-                Nenhum lançamento no período selecionado.
-              </TableCell>
-            </TableRow>
-          )}
+              {!isLoading && filteredRows.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    Nenhum lançamento no período selecionado.
+                  </TableCell>
+                </TableRow>
+              )}
 
-          {filteredRows.map((t) => (
-            <TableRow key={t.id}>
-              <TableCell className="text-muted-foreground">{formatDate(t.date)}</TableCell>
-              <TableCell>{t.description}</TableCell>
-              <TableCell className="text-muted-foreground">
-                {t.categories?.name ?? "-"}
-              </TableCell>
-              <TableCell className="text-muted-foreground">
-                {t.accounts?.bank ?? "-"}
-              </TableCell>
-              <TableCell
-                className={t.type === "receita" ? "text-success" : "text-destructive"}
-              >
-                {t.type === "receita" ? "+ " : "- "}
-                {formatCurrency(t.amount)}
-              </TableCell>
-              <TableCell>
-                <Badge variant={STATUS_BADGE_VARIANT[t.status]}>
-                  {STATUS_LABELS[t.status]}
-                </Badge>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+              {filteredRows.map((t) => (
+                <TableRow key={t.id}>
+                  <TableCell className="text-muted-foreground">
+                    {formatDate(t.date)}
+                  </TableCell>
+                  <TableCell>{t.description}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {t.categories?.name ?? "-"}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {t.accounts?.bank ?? "-"}
+                  </TableCell>
+                  <TableCell
+                    className={t.type === "receita" ? "text-success" : "text-destructive"}
+                  >
+                    {t.type === "receita" ? "+ " : "- "}
+                    {formatCurrency(t.amount)}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={STATUS_BADGE_VARIANT[t.status]}>
+                      {STATUS_LABELS[t.status]}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </>
+      )}
+
+      {view === "dre" && <DreView rows={filteredRows} />}
     </div>
   );
 }
