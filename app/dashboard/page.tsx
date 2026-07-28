@@ -7,6 +7,7 @@ import {
   CategoryBreakdownChart,
   type CategorySlice,
 } from "@/components/charts/category-breakdown-chart";
+import { MonthSelector } from "@/components/dashboard/month-selector";
 
 function formatCurrency(value: number) {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -33,18 +34,38 @@ interface RecentTransactionRow {
   categories: { name: string } | null;
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ month?: string }>;
+}) {
   const supabase = await createClient();
 
+  const { month: monthParam } = await searchParams;
   const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-    .toISOString()
-    .slice(0, 10);
-  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+  const monthMatch = monthParam?.match(/^(\d{4})-(\d{2})$/);
+  const selectedMonthDate = monthMatch
+    ? new Date(Number(monthMatch[1]), Number(monthMatch[2]) - 1, 1)
+    : new Date(now.getFullYear(), now.getMonth(), 1);
+  const selectedMonthKey = `${selectedMonthDate.getFullYear()}-${String(selectedMonthDate.getMonth() + 1).padStart(2, "0")}`;
+  const isCurrentMonth =
+    selectedMonthDate.getFullYear() === now.getFullYear() &&
+    selectedMonthDate.getMonth() === now.getMonth();
+
+  const monthStart = selectedMonthDate.toISOString().slice(0, 10);
+  const monthEnd = new Date(
+    selectedMonthDate.getFullYear(),
+    selectedMonthDate.getMonth() + 1,
+    0
+  )
     .toISOString()
     .slice(0, 10);
 
-  const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 11, 1)
+  const twelveMonthsAgo = new Date(
+    selectedMonthDate.getFullYear(),
+    selectedMonthDate.getMonth() - 11,
+    1
+  )
     .toISOString()
     .slice(0, 10);
 
@@ -99,16 +120,21 @@ export default async function DashboardPage() {
   const burnRate = saidas;
   const runway = burnRate > 0 ? saldoAtual / burnRate : null;
 
+  const monthLabel = selectedMonthDate.toLocaleDateString("pt-BR", {
+    month: "long",
+    year: "numeric",
+  });
+
   const summaryCards = [
     { label: "Saldo Atual", value: saldoAtual, icon: Wallet, accent: "" },
     {
-      label: "Entradas (mês)",
+      label: `Entradas (${monthLabel})`,
       value: entradas,
       icon: ArrowUpCircle,
       accent: "text-success",
     },
     {
-      label: "Saídas (mês)",
+      label: `Saídas (${monthLabel})`,
       value: saidas,
       icon: ArrowDownCircle,
       accent: "text-destructive",
@@ -124,13 +150,13 @@ export default async function DashboardPage() {
   const indicatorCards = [
     { label: "Margem", value: `${margem.toFixed(1)}%` },
     { label: "Ticket Médio", value: formatCurrency(ticketMedio) },
-    { label: "Burn Rate (mês)", value: formatCurrency(burnRate) },
+    { label: `Burn Rate (${monthLabel})`, value: formatCurrency(burnRate) },
     { label: "Runway", value: runway !== null ? `${runway.toFixed(1)} meses` : "—" },
   ];
 
   const months: { key: string; label: string; start: string; end: string }[] = [];
   for (let i = 11; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const d = new Date(selectedMonthDate.getFullYear(), selectedMonthDate.getMonth() - i, 1);
     const start = d.toISOString().slice(0, 10);
     const end = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10);
     months.push({
@@ -160,15 +186,17 @@ export default async function DashboardPage() {
   const avgDespesa =
     recentForAvg.reduce((sum, m) => sum + m.despesa, 0) / (recentForAvg.length || 1);
 
-  const projectedPoints: CashFlowPoint[] = Array.from({ length: 3 }, (_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() + i + 1, 1);
-    return {
-      month: d.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" }),
-      receita: avgReceita,
-      despesa: avgDespesa,
-      projected: true,
-    };
-  });
+  const projectedPoints: CashFlowPoint[] = isCurrentMonth
+    ? Array.from({ length: 3 }, (_, i) => {
+        const d = new Date(selectedMonthDate.getFullYear(), selectedMonthDate.getMonth() + i + 1, 1);
+        return {
+          month: d.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" }),
+          receita: avgReceita,
+          despesa: avgDespesa,
+          projected: true,
+        };
+      })
+    : [];
 
   const cashFlowWithProjection = [...cashFlowSeries, ...projectedPoints];
 
@@ -194,11 +222,14 @@ export default async function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-foreground">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">
-          Visão geral financeira da VX Capital
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-foreground">Dashboard</h1>
+          <p className="text-sm text-muted-foreground">
+            Visão geral financeira da VX Capital
+          </p>
+        </div>
+        <MonthSelector selectedMonth={selectedMonthKey} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -236,7 +267,9 @@ export default async function DashboardPage() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Fluxo de Caixa · 12 meses + projeção</CardTitle>
+            <CardTitle>
+              Fluxo de Caixa · 12 meses{isCurrentMonth ? " + projeção" : ""}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <CashFlowChart
@@ -248,7 +281,7 @@ export default async function DashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Despesas por categoria (mês)</CardTitle>
+            <CardTitle>Despesas por categoria ({monthLabel})</CardTitle>
           </CardHeader>
           <CardContent>
             <CategoryBreakdownChart data={categoryBreakdown} />
