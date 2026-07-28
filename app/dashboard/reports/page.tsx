@@ -28,9 +28,9 @@ function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function monthStartISO() {
+function yearStartISO() {
   const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  return new Date(now.getFullYear(), 0, 1).toISOString().slice(0, 10);
 }
 
 function formatCurrency(value: number) {
@@ -123,7 +123,7 @@ async function exportPdf(
 export default function ReportsPage() {
   const { data: transactions, isLoading } = transactionsApi.useList();
 
-  const [dateFrom, setDateFrom] = useState(monthStartISO());
+  const [dateFrom, setDateFrom] = useState(yearStartISO());
   const [dateTo, setDateTo] = useState(todayISO());
   const [typeFilter, setTypeFilter] = useState<"todos" | TransactionType>("todos");
   const [view, setView] = useState<"fluxo" | "dre">("fluxo");

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { AlertCircle, CheckCircle2, FileUp } from "lucide-react";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,7 +15,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { transactionsApi } from "@/hooks/use-transactions";
-import { parseStatementFile, reconcile, type ReconciledEntry } from "@/lib/reconciliation";
+import {
+  parseStatementFile,
+  reconcile,
+  StatementParseError,
+  type ReconciledEntry,
+} from "@/lib/reconciliation";
 
 function formatCurrency(value: number) {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -30,11 +36,22 @@ export default function ReconciliationPage() {
   const [fileName, setFileName] = useState<string | null>(null);
 
   async function handleFile(file: File) {
-    const text = await file.text();
-    const bankEntries = parseStatementFile(file.name, text);
-    const reconciled = reconcile(bankEntries, transactions ?? []);
-    setEntries(reconciled);
-    setFileName(file.name);
+    try {
+      const text = await file.text();
+      const bankEntries = parseStatementFile(file.name, text);
+      const reconciled = reconcile(bankEntries, transactions ?? []);
+      setEntries(reconciled);
+      setFileName(file.name);
+      toast.success(`${bankEntries.length} lançamento(s) importado(s) do extrato.`);
+    } catch (error) {
+      setEntries([]);
+      setFileName(null);
+      const message =
+        error instanceof StatementParseError
+          ? error.message
+          : "Não foi possível ler o arquivo. Verifique se é um CSV ou OFX válido.";
+      toast.error(message);
+    }
   }
 
   const summary = useMemo(() => {

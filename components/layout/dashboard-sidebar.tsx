@@ -14,14 +14,12 @@ import {
   FileBarChart,
   UserCog,
   Settings,
-  Sparkles,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/dashboard/chat", label: "Assistente IA", icon: Sparkles },
   { href: "/dashboard/transactions", label: "Fluxo de Caixa", icon: ArrowLeftRight },
   { href: "/dashboard/clients", label: "Clientes", icon: Users },
   { href: "/dashboard/projects", label: "Projetos", icon: Briefcase },
