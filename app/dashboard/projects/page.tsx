@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -88,6 +89,7 @@ export default function ProjectsPage() {
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Project | null>(null);
+  const { confirm, ConfirmDialog } = useConfirmDialog();
 
   const {
     register,
@@ -128,7 +130,13 @@ export default function ProjectsPage() {
   }
 
   async function handleDelete(project: Project) {
-    if (!window.confirm(`Excluir o projeto "${project.name}"?`)) return;
+    const ok = await confirm({
+      title: "Excluir projeto",
+      description: `Tem certeza que deseja excluir o projeto "${project.name}"? Essa ação não pode ser desfeita.`,
+      confirmLabel: "Excluir",
+      variant: "destructive",
+    });
+    if (!ok) return;
     await deleteProject.mutateAsync(project.id);
   }
 
@@ -293,13 +301,14 @@ export default function ProjectsPage() {
             </div>
 
             <DialogFooter>
-              <Button type="submit" disabled={isSubmitting}>
+              <Button type="submit" isLoading={isSubmitting}>
                 {editing ? "Salvar alterações" : "Criar projeto"}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
+      {ConfirmDialog}
     </div>
   );
 }

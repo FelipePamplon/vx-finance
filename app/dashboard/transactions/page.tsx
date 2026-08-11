@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -119,6 +120,7 @@ export default function TransactionsPage() {
   const [typeFilter, setTypeFilter] = useState<"todos" | TransactionType>("todos");
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const { confirm, ConfirmDialog } = useConfirmDialog();
 
   const {
     register,
@@ -209,7 +211,13 @@ export default function TransactionsPage() {
   }
 
   async function handleDelete(transaction: TransactionWithRelations) {
-    if (!window.confirm(`Excluir o lançamento "${transaction.description}"?`)) return;
+    const ok = await confirm({
+      title: "Excluir lançamento",
+      description: `Tem certeza que deseja excluir "${transaction.description}"? Essa ação não pode ser desfeita.`,
+      confirmLabel: "Excluir",
+      variant: "destructive",
+    });
+    if (!ok) return;
     await deleteTransaction.mutateAsync(transaction.id);
   }
 
@@ -541,7 +549,7 @@ export default function TransactionsPage() {
             </div>
 
             <DialogFooter>
-              <Button type="submit" disabled={isSubmitting || uploading}>
+              <Button type="submit" isLoading={isSubmitting || uploading}>
                 {uploading
                   ? "Enviando comprovante..."
                   : editing
@@ -552,6 +560,7 @@ export default function TransactionsPage() {
           </form>
         </DialogContent>
       </Dialog>
+      {ConfirmDialog}
     </div>
   );
 }

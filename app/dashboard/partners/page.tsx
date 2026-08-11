@@ -9,6 +9,7 @@ import { Handshake, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -55,6 +56,7 @@ export default function PartnersPage() {
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Partner | null>(null);
+  const { confirm, ConfirmDialog } = useConfirmDialog();
 
   const {
     register,
@@ -92,7 +94,13 @@ export default function PartnersPage() {
   }
 
   async function handleDelete(partner: Partner) {
-    if (!window.confirm(`Excluir o sócio "${partner.name}"?`)) return;
+    const ok = await confirm({
+      title: "Excluir sócio",
+      description: `Tem certeza que deseja excluir o sócio "${partner.name}"? Essa ação não pode ser desfeita.`,
+      confirmLabel: "Excluir",
+      variant: "destructive",
+    });
+    if (!ok) return;
     await deletePartner.mutateAsync(partner.id);
   }
 
@@ -211,13 +219,14 @@ export default function PartnersPage() {
             </div>
 
             <DialogFooter>
-              <Button type="submit" disabled={isSubmitting}>
+              <Button type="submit" isLoading={isSubmitting}>
                 {editing ? "Salvar alterações" : "Criar sócio"}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
+      {ConfirmDialog}
     </div>
   );
 }

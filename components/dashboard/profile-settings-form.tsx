@@ -55,7 +55,7 @@ export function ProfileSettingsForm({
         {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
       </div>
 
-      <Button type="submit" disabled={isSubmitting} className="w-fit">
+      <Button type="submit" isLoading={isSubmitting} className="w-fit">
         Salvar
       </Button>
     </form>

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -66,6 +67,7 @@ export default function CategoriesPage() {
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Category | null>(null);
+  const { confirm, ConfirmDialog } = useConfirmDialog();
 
   const {
     register,
@@ -106,7 +108,13 @@ export default function CategoriesPage() {
   }
 
   async function handleDelete(category: Category) {
-    if (!window.confirm(`Excluir a categoria "${category.name}"?`)) return;
+    const ok = await confirm({
+      title: "Excluir categoria",
+      description: `Tem certeza que deseja excluir a categoria "${category.name}"? Essa ação não pode ser desfeita.`,
+      confirmLabel: "Excluir",
+      variant: "destructive",
+    });
+    if (!ok) return;
     await deleteCategory.mutateAsync(category.id);
   }
 
@@ -262,13 +270,14 @@ export default function CategoriesPage() {
             </div>
 
             <DialogFooter>
-              <Button type="submit" disabled={isSubmitting}>
+              <Button type="submit" isLoading={isSubmitting}>
                 {editing ? "Salvar alterações" : "Criar categoria"}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
+      {ConfirmDialog}
     </div>
   );
 }

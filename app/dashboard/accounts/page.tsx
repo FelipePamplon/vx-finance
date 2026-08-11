@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -91,6 +92,7 @@ export default function AccountsPage() {
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Account | null>(null);
+  const { confirm, ConfirmDialog } = useConfirmDialog();
 
   const {
     register,
@@ -132,7 +134,13 @@ export default function AccountsPage() {
   }
 
   async function handleDelete(account: Account) {
-    if (!window.confirm(`Excluir a conta "${account.bank}"?`)) return;
+    const ok = await confirm({
+      title: "Excluir conta bancária",
+      description: `Tem certeza que deseja excluir a conta "${account.bank}"? Essa ação não pode ser desfeita.`,
+      confirmLabel: "Excluir",
+      variant: "destructive",
+    });
+    if (!ok) return;
     await deleteAccount.mutateAsync(account.id);
   }
 
@@ -279,13 +287,14 @@ export default function AccountsPage() {
             </div>
 
             <DialogFooter>
-              <Button type="submit" disabled={isSubmitting}>
+              <Button type="submit" isLoading={isSubmitting}>
                 {editing ? "Salvar alterações" : "Criar conta"}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
+      {ConfirmDialog}
     </div>
   );
 }

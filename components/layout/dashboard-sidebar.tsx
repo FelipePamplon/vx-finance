@@ -2,35 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  LayoutDashboard,
-  ArrowLeftRight,
-  Users,
-  Briefcase,
-  Tags,
-  Landmark,
-  Handshake,
-  FileCheck2,
-  FileBarChart,
-  UserCog,
-  Settings,
-} from "lucide-react";
 
 import { cn } from "@/lib/utils";
-
-const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/dashboard/transactions", label: "Fluxo de Caixa", icon: ArrowLeftRight },
-  { href: "/dashboard/clients", label: "Clientes", icon: Users },
-  { href: "/dashboard/projects", label: "Projetos", icon: Briefcase },
-  { href: "/dashboard/categories", label: "Categorias", icon: Tags },
-  { href: "/dashboard/accounts", label: "Contas Bancárias", icon: Landmark },
-  { href: "/dashboard/partners", label: "Sócios", icon: Handshake },
-  { href: "/dashboard/reconciliation", label: "Conciliação", icon: FileCheck2 },
-  { href: "/dashboard/reports", label: "Relatórios", icon: FileBarChart },
-  { href: "/dashboard/users", label: "Usuários", icon: UserCog },
-  { href: "/dashboard/settings", label: "Configurações", icon: Settings },
-];
+import { navGroups } from "@/lib/nav-items";
 
 export function DashboardSidebar() {
   const pathname = usePathname();
@@ -42,24 +16,37 @@ export function DashboardSidebar() {
           VX <span className="text-primary">Capital</span>
         </span>
       </div>
-      <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
-        {navItems.map((item) => {
-          const isActive = pathname === item.href;
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
-                isActive && "bg-accent text-foreground"
-              )}
-            >
-              <Icon className="size-4" />
-              {item.label}
-            </Link>
-          );
-        })}
+      <nav className="flex flex-1 flex-col gap-4 overflow-y-auto p-3">
+        {navGroups.map((group) => (
+          <div key={group.label} className="flex flex-col gap-1">
+            <span className="px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
+              {group.label}
+            </span>
+            {group.items.map((item) => {
+              const isActive = pathname === item.href;
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+                    isActive && "bg-accent text-foreground"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "absolute left-0 h-5 w-0.5 rounded-full bg-primary transition-opacity",
+                      isActive ? "opacity-100" : "opacity-0"
+                    )}
+                  />
+                  <Icon className="size-4" />
+                  {item.label}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
       </nav>
     </aside>
   );

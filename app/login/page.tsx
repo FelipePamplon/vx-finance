@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Loader2 } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -133,18 +132,16 @@ export default function LoginPage() {
               </p>
             )}
 
-            <Button type="submit" disabled={isSubmitting} className="mt-2">
-              {isSubmitting && <Loader2 className="animate-spin" />}
+            <Button type="submit" isLoading={isSubmitting} className="mt-2">
               Entrar
             </Button>
 
             <Button
               type="button"
               variant="secondary"
-              disabled={isMagicLinkLoading}
+              isLoading={isMagicLinkLoading}
               onClick={handleMagicLink}
             >
-              {isMagicLinkLoading && <Loader2 className="animate-spin" />}
               Enviar link mágico
             </Button>
           </form>

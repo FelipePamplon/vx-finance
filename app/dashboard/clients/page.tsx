@@ -9,6 +9,7 @@ import { Building2, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -57,6 +58,7 @@ export default function ClientsPage() {
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Client | null>(null);
+  const { confirm, ConfirmDialog } = useConfirmDialog();
 
   const {
     register,
@@ -95,7 +97,13 @@ export default function ClientsPage() {
   }
 
   async function handleDelete(client: Client) {
-    if (!window.confirm(`Excluir o cliente "${client.company}"?`)) return;
+    const ok = await confirm({
+      title: "Excluir cliente",
+      description: `Tem certeza que deseja excluir o cliente "${client.company}"? Essa ação não pode ser desfeita.`,
+      confirmLabel: "Excluir",
+      variant: "destructive",
+    });
+    if (!ok) return;
     await deleteClient.mutateAsync(client.id);
   }
 
@@ -216,13 +224,14 @@ export default function ClientsPage() {
             </div>
 
             <DialogFooter>
-              <Button type="submit" disabled={isSubmitting}>
+              <Button type="submit" isLoading={isSubmitting}>
                 {editing ? "Salvar alterações" : "Criar cliente"}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
+      {ConfirmDialog}
     </div>
   );
 }

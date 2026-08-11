@@ -22,7 +22,7 @@ export default async function DashboardLayout({
   const alerts = await getAlerts(supabase);
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex min-h-dvh bg-background">
       <DashboardSidebar />
       <div className="flex flex-1 flex-col">
         <DashboardTopbar userEmail={user.email ?? ""} alerts={alerts} />
