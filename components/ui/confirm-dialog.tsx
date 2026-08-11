@@ -25,7 +25,7 @@ export function useConfirmDialog() {
   const [open, setOpen] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
   const [options, setOptions] = useState<ConfirmOptions>({ title: "" });
-  const resolveRef = useRef<(value: boolean) => void>();
+  const resolveRef = useRef<((value: boolean) => void) | undefined>(undefined);
 
   const confirm = useCallback((opts: ConfirmOptions) => {
     setOptions(opts);
