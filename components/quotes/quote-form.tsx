@@ -181,8 +181,22 @@ export function QuoteForm({ quote }: { quote?: QuoteWithItems }) {
       const { default: jsPDF } = await import("jspdf");
       const { default: autoTable } = await import("jspdf-autotable");
 
-      const clientName =
-        clients?.find((c) => c.id === values.client_id)?.company ?? "Cliente não informado";
+      const GRAPHITE: [number, number, number] = [21, 27, 35];
+      const GOLD: [number, number, number] = [201, 162, 39];
+      const SLATE: [number, number, number] = [100, 116, 139];
+      const LIGHT_SLATE: [number, number, number] = [148, 163, 184];
+      const ZEBRA: [number, number, number] = [246, 247, 249];
+      const BORDER: [number, number, number] = [226, 229, 234];
+      const INK: [number, number, number] = [30, 35, 43];
+      const STATUS_COLOR: Record<QuoteStatus, [number, number, number]> = {
+        rascunho: LIGHT_SLATE,
+        enviado: GOLD,
+        aprovado: [16, 185, 129],
+        recusado: [239, 68, 68],
+        expirado: SLATE,
+      };
+
+      const client = clients?.find((c) => c.id === values.client_id);
       const itemsSubtotal = values.items.reduce(
         (sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unit_price) || 0),
         0
@@ -190,18 +204,88 @@ export function QuoteForm({ quote }: { quote?: QuoteWithItems }) {
       const itemsTotal = Math.max(itemsSubtotal - (Number(values.discount) || 0), 0);
 
       const doc = new jsPDF();
-      doc.setFontSize(16);
-      doc.text("VX Capital — Orçamento", 14, 18);
-      doc.setFontSize(10);
-      doc.setTextColor(100);
-      doc.text(`Cliente: ${clientName}`, 14, 26);
-      doc.text(`Título: ${values.title || "-"}`, 14, 32);
-      if (values.valid_until) {
-        doc.text(`Válido até: ${formatDate(values.valid_until)}`, 14, 38);
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const marginX = 14;
+      const rightX = pageWidth - marginX;
+
+      // Header band
+      doc.setFillColor(...GRAPHITE);
+      doc.rect(0, 0, pageWidth, 34, "F");
+      doc.setFillColor(...GOLD);
+      doc.rect(0, 34, pageWidth, 1, "F");
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(18);
+      doc.setTextColor(...GOLD);
+      doc.text("VX", marginX, 17);
+      doc.setTextColor(255, 255, 255);
+      doc.text(" CAPITAL", marginX + doc.getTextWidth("VX"), 17);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(...LIGHT_SLATE);
+      doc.text("Gestão financeira", marginX, 23);
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
+      doc.setTextColor(255, 255, 255);
+      doc.text("ORÇAMENTO", rightX, 15, { align: "right" });
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(...LIGHT_SLATE);
+      const quoteNumberLabel = quote ? `Nº ${String(quote.number).padStart(4, "0")}` : "Rascunho não salvo";
+      doc.text(quoteNumberLabel, rightX, 22, { align: "right" });
+      const issuedDate = quote?.created_at ? formatDate(quote.created_at.slice(0, 10)) : formatDate(new Date().toISOString().slice(0, 10));
+      doc.text(`Emitido em ${issuedDate}`, rightX, 27, { align: "right" });
+
+      // Client / details block
+      let y = 46;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(...GOLD);
+      doc.text("PREPARADO PARA", marginX, y);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.setTextColor(...INK);
+      doc.text(client?.company ?? "Cliente não informado", marginX, y + 7);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(...SLATE);
+      const clientDetailLine = [client?.contact, client?.email].filter(Boolean).join("  ·  ");
+      if (clientDetailLine) {
+        doc.text(clientDetailLine, marginX, y + 13);
       }
 
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(...GOLD);
+      doc.text("STATUS", rightX, y, { align: "right" });
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(...STATUS_COLOR[values.status]);
+      doc.text(QUOTE_STATUS_LABELS[values.status], rightX, y + 7, { align: "right" });
+      if (values.valid_until) {
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9);
+        doc.setTextColor(...SLATE);
+        doc.text(`Válido até ${formatDate(values.valid_until)}`, rightX, y + 13, { align: "right" });
+      }
+
+      y += 20;
+      doc.setDrawColor(...BORDER);
+      doc.line(marginX, y, rightX, y);
+
+      y += 9;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11.5);
+      doc.setTextColor(...INK);
+      doc.text(values.title || "Orçamento sem título", marginX, y);
+
+      const totalRowIndex =
+        1 + (values.discount > 0 ? 1 : 0); // index of the "Total" row inside foot
+
       autoTable(doc, {
-        startY: 44,
+        startY: y + 6,
+        margin: { left: marginX, right: marginX },
         head: [["Descrição", "Qtd", "Preço unit.", "Total"]],
         body: values.items.map((item) => [
           item.description || "-",
@@ -216,20 +300,68 @@ export function QuoteForm({ quote }: { quote?: QuoteWithItems }) {
             : []),
           ["", "", "Total", formatCurrency(itemsTotal)],
         ],
-        styles: { fontSize: 9 },
-        headStyles: { fillColor: [21, 27, 35] },
-        footStyles: { fillColor: [21, 27, 35], textColor: 255 },
+        theme: "plain",
+        styles: {
+          fontSize: 9.5,
+          textColor: INK,
+          lineColor: BORDER,
+          lineWidth: 0.1,
+          cellPadding: 4,
+        },
+        headStyles: {
+          fillColor: GRAPHITE,
+          textColor: 255,
+          fontStyle: "bold",
+          fontSize: 9,
+        },
+        columnStyles: {
+          1: { halign: "right", cellWidth: 22 },
+          2: { halign: "right", cellWidth: 32 },
+          3: { halign: "right", cellWidth: 32 },
+        },
+        alternateRowStyles: { fillColor: ZEBRA },
+        footStyles: {
+          fillColor: 255,
+          textColor: INK,
+          fontStyle: "bold",
+          fontSize: 9.5,
+          lineWidth: 0.3,
+          lineColor: BORDER,
+        },
+        didParseCell: (data) => {
+          if (data.section === "foot" && data.row.index === totalRowIndex) {
+            data.cell.styles.fontSize = 12;
+            data.cell.styles.textColor = data.column.index >= 2 ? GOLD : INK;
+          }
+        },
       });
 
+      let finalY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
+
       if (values.notes) {
-        const finalY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable
-          .finalY;
-        doc.setFontSize(10);
-        doc.setTextColor(60);
-        doc.text("Observações:", 14, finalY + 10);
+        finalY += 10;
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8);
+        doc.setTextColor(...GOLD);
+        doc.text("OBSERVAÇÕES", marginX, finalY);
+        doc.setFont("helvetica", "normal");
         doc.setFontSize(9);
-        const notesLines = doc.splitTextToSize(values.notes, 180);
-        doc.text(notesLines, 14, finalY + 16);
+        doc.setTextColor(...SLATE);
+        const notesLines = doc.splitTextToSize(values.notes, rightX - marginX);
+        doc.text(notesLines, marginX, finalY + 6);
+      }
+
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const pageCount = doc.internal.getNumberOfPages();
+      for (let page = 1; page <= pageCount; page++) {
+        doc.setPage(page);
+        doc.setDrawColor(...BORDER);
+        doc.line(marginX, pageHeight - 14, rightX, pageHeight - 14);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        doc.setTextColor(...LIGHT_SLATE);
+        doc.text("VX Capital Finance", marginX, pageHeight - 9);
+        doc.text(`Página ${page} de ${pageCount}`, rightX, pageHeight - 9, { align: "right" });
       }
 
       doc.save(`orcamento-${(values.title || "sem-titulo").toLowerCase().replace(/\s+/g, "-")}.pdf`);
