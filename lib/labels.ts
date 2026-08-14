@@ -1,4 +1,4 @@
-import type { TransactionStatus } from "@/types/database";
+import type { QuoteStatus, TransactionStatus } from "@/types/database";
 
 export const TRANSACTION_STATUS_LABELS: Record<TransactionStatus, string> = {
   pendente: "Pendente",
@@ -13,4 +13,23 @@ export const TRANSACTION_STATUS_BADGE_VARIANT: Record<
   pendente: "secondary",
   pago: "success",
   cancelado: "destructive",
+};
+
+export const QUOTE_STATUS_LABELS: Record<QuoteStatus, string> = {
+  rascunho: "Rascunho",
+  enviado: "Enviado",
+  aprovado: "Aprovado",
+  recusado: "Recusado",
+  expirado: "Expirado",
+};
+
+export const QUOTE_STATUS_BADGE_VARIANT: Record<
+  QuoteStatus,
+  "default" | "secondary" | "success" | "destructive" | "outline"
+> = {
+  rascunho: "secondary",
+  enviado: "default",
+  aprovado: "success",
+  recusado: "destructive",
+  expirado: "outline",
 };

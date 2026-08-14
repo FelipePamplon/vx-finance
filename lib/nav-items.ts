@@ -8,6 +8,8 @@ import {
   Handshake,
   FileCheck2,
   FileBarChart,
+  FileText,
+  Wrench,
   UserCog,
   Settings,
   type LucideIcon,
@@ -35,6 +37,13 @@ export const navGroups: NavGroup[] = [
       { href: "/dashboard/transactions", label: "Fluxo de Caixa", icon: ArrowLeftRight },
       { href: "/dashboard/reconciliation", label: "Conciliação", icon: FileCheck2 },
       { href: "/dashboard/reports", label: "Relatórios", icon: FileBarChart },
+    ],
+  },
+  {
+    label: "Comercial",
+    items: [
+      { href: "/dashboard/quotes", label: "Orçamentos", icon: FileText },
+      { href: "/dashboard/services", label: "Serviços", icon: Wrench },
     ],
   },
   {

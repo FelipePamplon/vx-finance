@@ -2,6 +2,7 @@ export type TransactionType = "receita" | "despesa";
 export type TransactionStatus = "pendente" | "pago" | "cancelado";
 export type AccountType = "corrente" | "poupanca" | "investimento" | "caixa";
 export type ProjectStatus = "ativo" | "pausado" | "concluido" | "cancelado";
+export type QuoteStatus = "rascunho" | "enviado" | "aprovado" | "recusado" | "expirado";
 
 export interface Category {
   id: string;
@@ -76,4 +77,49 @@ export interface TransactionWithRelations extends Transaction {
   categories: { name: string; color: string } | null;
   clients: { company: string } | null;
   projects: { name: string } | null;
+}
+
+export interface Service {
+  id: string;
+  name: string;
+  description: string | null;
+  price: number;
+  unit: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface QuoteItem {
+  id: string;
+  quote_id: string;
+  service_id: string | null;
+  description: string;
+  quantity: number;
+  unit_price: number;
+  position: number;
+  created_at: string;
+}
+
+export interface Quote {
+  id: string;
+  number: number;
+  title: string;
+  client_id: string | null;
+  project_id: string | null;
+  status: QuoteStatus;
+  valid_until: string | null;
+  notes: string | null;
+  discount: number;
+  total: number;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface QuoteWithRelations extends Quote {
+  clients: { company: string; email: string | null; contact: string | null } | null;
+  projects: { name: string } | null;
+}
+
+export interface QuoteWithItems extends QuoteWithRelations {
+  quote_items: QuoteItem[];
 }
