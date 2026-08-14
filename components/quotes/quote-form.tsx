@@ -158,7 +158,12 @@ export function QuoteForm({ quote }: { quote?: QuoteWithItems }) {
       valid_until: values.valid_until || null,
       notes: values.notes || null,
       discount: values.discount,
-      items: values.items,
+      items: values.items.map((item) => ({
+        service_id: item.service_id ?? null,
+        description: item.description ?? "",
+        quantity: Number(item.quantity) || 0,
+        unit_price: Number(item.unit_price) || 0,
+      })),
     };
 
     if (quote) {
