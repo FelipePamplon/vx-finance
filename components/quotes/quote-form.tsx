@@ -352,7 +352,7 @@ export function QuoteForm({ quote }: { quote?: QuoteWithItems }) {
       }
 
       const pageHeight = doc.internal.pageSize.getHeight();
-      const pageCount = doc.internal.getNumberOfPages();
+      const pageCount = doc.getNumberOfPages();
       for (let page = 1; page <= pageCount; page++) {
         doc.setPage(page);
         doc.setDrawColor(...BORDER);
