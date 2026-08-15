@@ -1,4 +1,17 @@
-import type { QuoteStatus, TransactionStatus } from "@/types/database";
+import type { QuoteStatus, TransactionStatus, TransactionType } from "@/types/database";
+
+export const TRANSACTION_TYPE_LABELS: Record<TransactionType, string> = {
+  receita: "Receita",
+  despesa: "Despesa",
+  transferencia: "Transferência",
+};
+
+/** Prefixo de sinal na exibicao de valores. Transferencia nao soma nem subtrai do caixa. */
+export const TRANSACTION_TYPE_SIGN: Record<TransactionType, string> = {
+  receita: "+ ",
+  despesa: "- ",
+  transferencia: "",
+};
 
 export const TRANSACTION_STATUS_LABELS: Record<TransactionStatus, string> = {
   pendente: "Pendente",

@@ -96,9 +96,13 @@ export const quotesApi = {
         const supabase = createClient();
         const quotesTable = supabase.from("quotes") as any; // eslint-disable-line @typescript-eslint/no-explicit-any
         const total = computeTotal(input.items, input.discount);
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
 
         const { data: quote, error } = await quotesTable
           .insert({
+            created_by: user?.id ?? null,
             title: input.title,
             client_id: input.client_id,
             project_id: input.project_id,

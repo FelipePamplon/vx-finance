@@ -54,6 +54,7 @@ import { projectsApi } from "@/hooks/use-projects";
 import {
   TRANSACTION_STATUS_BADGE_VARIANT as STATUS_BADGE_VARIANT,
   TRANSACTION_STATUS_LABELS as STATUS_LABELS,
+  TRANSACTION_TYPE_SIGN as TYPE_SIGN,
 } from "@/lib/labels";
 import { getAttachmentUrl, uploadAttachment } from "@/lib/storage";
 import type {
@@ -62,17 +63,45 @@ import type {
   TransactionWithRelations,
 } from "@/types/database";
 
-const transactionSchema = z.object({
-  description: z.string().min(2, "Descrição muito curta"),
-  amount: z.coerce.number().positive("Valor deve ser maior que zero"),
-  type: z.enum(["receita", "despesa"]),
-  date: z.string().min(1, "Selecione uma data"),
-  account_id: z.string().min(1, "Selecione uma conta"),
-  category_id: z.string().min(1, "Selecione uma categoria"),
-  project_id: z.string().optional(),
-  client_id: z.string().optional(),
-  status: z.enum(["pendente", "pago", "cancelado"]),
-});
+const transactionSchema = z
+  .object({
+    description: z.string().min(2, "Descrição muito curta"),
+    amount: z.coerce.number().positive("Valor deve ser maior que zero"),
+    type: z.enum(["receita", "despesa", "transferencia"]),
+    date: z.string().min(1, "Selecione uma data"),
+    due_date: z.string().optional(),
+    paid_date: z.string().optional(),
+    account_id: z.string().min(1, "Selecione uma conta"),
+    transfer_account_id: z.string().optional(),
+    category_id: z.string().optional(),
+    project_id: z.string().optional(),
+    client_id: z.string().optional(),
+    status: z.enum(["pendente", "pago", "cancelado"]),
+  })
+  // Transferencia nao tem categoria (nao e receita nem despesa), mas exige destino.
+  .superRefine((values, ctx) => {
+    if (values.type === "transferencia") {
+      if (!values.transfer_account_id) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["transfer_account_id"],
+          message: "Selecione a conta de destino",
+        });
+      } else if (values.transfer_account_id === values.account_id) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["transfer_account_id"],
+          message: "A conta de destino deve ser diferente da origem",
+        });
+      }
+    } else if (!values.category_id) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["category_id"],
+        message: "Selecione uma categoria",
+      });
+    }
+  });
 
 type TransactionFormValues = z.infer<typeof transactionSchema>;
 
@@ -86,7 +115,10 @@ function defaultValues(): TransactionFormValues {
     amount: 0,
     type: "despesa",
     date: todayISO(),
+    due_date: todayISO(),
+    paid_date: "",
     account_id: "",
+    transfer_account_id: "",
     category_id: "",
     project_id: "",
     client_id: "",
@@ -136,7 +168,9 @@ export default function TransactionsPage() {
 
   const watchedType = watch("type");
   const watchedAccountId = watch("account_id");
+  const watchedTransferAccountId = watch("transfer_account_id");
   const watchedCategoryId = watch("category_id");
+  const isTransferForm = watchedType === "transferencia";
   const watchedProjectId = watch("project_id");
   const watchedClientId = watch("client_id");
   const watchedStatus = watch("status");
@@ -168,7 +202,10 @@ export default function TransactionsPage() {
       amount: transaction.amount,
       type: transaction.type,
       date: transaction.date,
+      due_date: transaction.due_date ?? "",
+      paid_date: transaction.paid_date ?? "",
       account_id: transaction.account_id ?? "",
+      transfer_account_id: transaction.transfer_account_id ?? "",
       category_id: transaction.category_id ?? "",
       project_id: transaction.project_id ?? "",
       client_id: transaction.client_id ?? "",
@@ -189,13 +226,20 @@ export default function TransactionsPage() {
       }
     }
 
+    const isTransfer = values.type === "transferencia";
+
     const payload = {
       description: values.description,
       amount: values.amount,
       type: values.type,
       date: values.date,
+      due_date: values.due_date || values.date,
+      // Se marcou como pago sem informar a data, assume a data de competencia.
+      paid_date:
+        values.status === "pago" ? values.paid_date || values.date : null,
       account_id: values.account_id,
-      category_id: values.category_id,
+      transfer_account_id: isTransfer ? values.transfer_account_id || null : null,
+      category_id: isTransfer ? null : values.category_id || null,
       project_id: values.project_id || null,
       client_id: values.client_id || null,
       status: values.status,
@@ -305,7 +349,9 @@ export default function TransactionsPage() {
                 </div>
               </TableCell>
               <TableCell>
-                {transaction.categories ? (
+                {transaction.type === "transferencia" ? (
+                  <Badge variant="outline">Transferência</Badge>
+                ) : transaction.categories ? (
                   <Badge
                     variant="secondary"
                     style={{
@@ -322,13 +368,20 @@ export default function TransactionsPage() {
               </TableCell>
               <TableCell className="text-muted-foreground">
                 {transaction.accounts?.bank ?? "-"}
+                {transaction.type === "transferencia" && (
+                  <span className="text-xs"> → destino</span>
+                )}
               </TableCell>
               <TableCell
                 className={
-                  transaction.type === "receita" ? "text-success" : "text-destructive"
+                  transaction.type === "receita"
+                    ? "tabular-nums text-success"
+                    : transaction.type === "despesa"
+                      ? "tabular-nums text-destructive"
+                      : "tabular-nums text-muted-foreground"
                 }
               >
-                {transaction.type === "receita" ? "+ " : "- "}
+                {TYPE_SIGN[transaction.type]}
                 {formatCurrency(transaction.amount)}
               </TableCell>
               <TableCell>
@@ -404,6 +457,7 @@ export default function TransactionsPage() {
                   <SelectContent>
                     <SelectItem value="receita">Receita</SelectItem>
                     <SelectItem value="despesa">Despesa</SelectItem>
+                    <SelectItem value="transferencia">Transferência</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -417,14 +471,21 @@ export default function TransactionsPage() {
               </div>
 
               <div className="flex flex-col gap-2">
-                <Label htmlFor="date">Data</Label>
+                <Label htmlFor="date">Competência</Label>
                 <Input id="date" type="date" {...register("date")} />
               </div>
             </div>
 
+            {isTransferForm && (
+              <p className="rounded-md bg-accent/50 px-3 py-2 text-xs text-muted-foreground">
+                Transferência move dinheiro entre contas próprias: não entra no
+                resultado nem no DRE, apenas altera o saldo das duas contas.
+              </p>
+            )}
+
             <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col gap-2">
-                <Label>Conta</Label>
+                <Label>{isTransferForm ? "Conta de origem" : "Conta"}</Label>
                 <Select
                   value={watchedAccountId}
                   onValueChange={(value) => setValue("account_id", value)}
@@ -445,27 +506,75 @@ export default function TransactionsPage() {
                 )}
               </div>
 
+              {isTransferForm ? (
+                <div className="flex flex-col gap-2">
+                  <Label>Conta de destino</Label>
+                  <Select
+                    value={watchedTransferAccountId}
+                    onValueChange={(value) => setValue("transfer_account_id", value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione a conta de destino" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {accounts
+                        ?.filter((account) => account.id !== watchedAccountId)
+                        .map((account) => (
+                          <SelectItem key={account.id} value={account.id}>
+                            {account.bank}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  {errors.transfer_account_id && (
+                    <p className="text-sm text-destructive">
+                      {errors.transfer_account_id.message}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <Label>Categoria</Label>
+                  <Select
+                    value={watchedCategoryId}
+                    onValueChange={(value) => setValue("category_id", value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione uma categoria" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {filteredCategories.map((category) => (
+                        <SelectItem key={category.id} value={category.id}>
+                          {category.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {errors.category_id && (
+                    <p className="text-sm text-destructive">{errors.category_id.message}</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col gap-2">
-                <Label>Categoria</Label>
-                <Select
-                  value={watchedCategoryId}
-                  onValueChange={(value) => setValue("category_id", value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione uma categoria" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {filteredCategories.map((category) => (
-                      <SelectItem key={category.id} value={category.id}>
-                        {category.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {errors.category_id && (
-                  <p className="text-sm text-destructive">{errors.category_id.message}</p>
-                )}
+                <Label htmlFor="due_date">Vencimento</Label>
+                <Input id="due_date" type="date" {...register("due_date")} />
+                <p className="text-xs text-muted-foreground">
+                  Usado em Contas a Pagar/Receber e nos alertas.
+                </p>
               </div>
+
+              {watchedStatus === "pago" && (
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="paid_date">Data do pagamento</Label>
+                  <Input id="paid_date" type="date" {...register("paid_date")} />
+                  <p className="text-xs text-muted-foreground">
+                    Em branco assume a data de competência.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">

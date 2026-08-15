@@ -1,7 +1,18 @@
+import { signedAmountOnStatement } from "@/lib/finance";
+import type { TransactionType } from "@/types/database";
+
 export interface BankEntry {
   date: string;
   description: string;
   amount: number;
+}
+
+export interface ReconcilableTransaction {
+  id: string;
+  date: string;
+  paid_date?: string | null;
+  amount: number;
+  type: TransactionType;
 }
 
 export interface ReconciledEntry extends BankEntry {
@@ -185,7 +196,7 @@ export function parseStatementFile(filename: string, text: string): BankEntry[] 
 
 export function reconcile(
   bankEntries: BankEntry[],
-  transactions: { id: string; date: string; amount: number; type: "receita" | "despesa" }[]
+  transactions: ReconcilableTransaction[]
 ): ReconciledEntry[] {
   const used = new Set<string>();
 
@@ -194,9 +205,10 @@ export function reconcile(
 
     const match = transactions.find((t) => {
       if (used.has(t.id)) return false;
-      const signedAmount = t.type === "receita" ? t.amount : -t.amount;
+      const signedAmount = signedAmountOnStatement(t);
       const amountMatches = Math.abs(signedAmount - entry.amount) < 0.01;
-      const tDate = new Date(`${t.date}T00:00:00`).getTime();
+      // O extrato reflete a data em que o dinheiro se moveu, nao a competencia.
+      const tDate = new Date(`${t.paid_date ?? t.date}T00:00:00`).getTime();
       const daysDiff = Math.abs(tDate - entryDate) / (1000 * 60 * 60 * 24);
       return amountMatches && daysDiff <= 2;
     });

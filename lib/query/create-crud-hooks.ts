@@ -40,7 +40,14 @@ export function createCrudHooks<T extends { id: string }>(
       mutationFn: async (values: Partial<T>) => {
         const supabase = createClient();
         const builder = supabase.from(table) as any; // eslint-disable-line @typescript-eslint/no-explicit-any
-        const { data, error } = await builder.insert(values).select().single();
+        // Trilha de autoria: sem isso nao da para responder "quem lancou isso?".
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        const { data, error } = await builder
+          .insert({ ...values, created_by: user?.id ?? null })
+          .select()
+          .single();
         if (error) throw error;
         return data as T;
       },

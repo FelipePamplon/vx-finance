@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { signedAmountForAccount } from "@/lib/finance";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Dialog,
@@ -81,14 +82,20 @@ export default function AccountsPage() {
 
   const netPaidByAccount = useMemo(() => {
     const map = new Map<string, number>();
-    (transactions ?? [])
-      .filter((t) => t.status === "pago" && t.account_id)
-      .forEach((t) => {
-        const delta = t.type === "receita" ? Number(t.amount) : -Number(t.amount);
-        map.set(t.account_id!, (map.get(t.account_id!) ?? 0) + delta);
-      });
+    const paid = (transactions ?? []).filter((t) => t.status === "pago");
+
+    // Uma transferencia toca duas contas, entao o saldo e calculado por conta
+    // (a origem perde, o destino ganha) em vez de somar sobre account_id.
+    (accounts ?? []).forEach((account) => {
+      const total = paid.reduce(
+        (sum, t) => sum + signedAmountForAccount(t, account.id),
+        0
+      );
+      map.set(account.id, total);
+    });
+
     return map;
-  }, [transactions]);
+  }, [transactions, accounts]);
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Account | null>(null);

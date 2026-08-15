@@ -9,6 +9,7 @@ import {
   FileCheck2,
   FileBarChart,
   FileText,
+  CalendarClock,
   Wrench,
   UserCog,
   Settings,
@@ -35,6 +36,7 @@ export const navGroups: NavGroup[] = [
     label: "Financeiro",
     items: [
       { href: "/dashboard/transactions", label: "Fluxo de Caixa", icon: ArrowLeftRight },
+      { href: "/dashboard/payables", label: "A Pagar / Receber", icon: CalendarClock },
       { href: "/dashboard/reconciliation", label: "Conciliação", icon: FileCheck2 },
       { href: "/dashboard/reports", label: "Relatórios", icon: FileBarChart },
     ],

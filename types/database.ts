@@ -1,4 +1,6 @@
-export type TransactionType = "receita" | "despesa";
+/** Categorias so classificam dinheiro que entra ou sai; transferencia nao tem categoria. */
+export type CategoryType = "receita" | "despesa";
+export type TransactionType = CategoryType | "transferencia";
 export type TransactionStatus = "pendente" | "pago" | "cancelado";
 export type AccountType = "corrente" | "poupanca" | "investimento" | "caixa";
 export type ProjectStatus = "ativo" | "pausado" | "concluido" | "cancelado";
@@ -9,7 +11,7 @@ export interface Category {
   name: string;
   color: string;
   icon: string | null;
-  type: TransactionType;
+  type: CategoryType;
   created_by: string | null;
   created_at: string;
 }
@@ -62,8 +64,15 @@ export interface Transaction {
   description: string;
   amount: number;
   type: TransactionType;
+  /** Data de competencia: quando o fato aconteceu. */
   date: string;
+  /** Quando vence. Usado pelas telas de contas a pagar/receber e pelos alertas. */
+  due_date: string | null;
+  /** Quando foi efetivamente pago/recebido. Preenchido quando status = "pago". */
+  paid_date: string | null;
   account_id: string | null;
+  /** Conta de destino; preenchido apenas quando type = "transferencia". */
+  transfer_account_id: string | null;
   category_id: string | null;
   project_id: string | null;
   client_id: string | null;

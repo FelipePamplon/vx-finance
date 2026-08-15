@@ -8,6 +8,8 @@ import {
 } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
+import { signedAmountTotal } from "@/lib/finance";
+import { TRANSACTION_TYPE_SIGN } from "@/lib/labels";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CashFlowChart, type CashFlowPoint } from "@/components/charts/cash-flow-chart";
 import {
@@ -15,6 +17,7 @@ import {
   type CategorySlice,
 } from "@/components/charts/category-breakdown-chart";
 import { MonthSelector } from "@/components/dashboard/month-selector";
+import type { TransactionType } from "@/types/database";
 
 function formatCurrency(value: number) {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -26,7 +29,7 @@ function formatDate(value: string) {
 
 interface YearTransactionRow {
   amount: number;
-  type: "receita" | "despesa";
+  type: TransactionType;
   date: string;
   category_id: string | null;
   categories: { name: string; color: string } | null;
@@ -36,7 +39,7 @@ interface RecentTransactionRow {
   id: string;
   description: string;
   amount: number;
-  type: "receita" | "despesa";
+  type: TransactionType;
   date: string;
   categories: { name: string } | null;
 }
@@ -100,8 +103,9 @@ export default async function DashboardPage({
   const recentTransactions = (rawRecentTransactions ?? []) as unknown as RecentTransactionRow[];
 
   const initialBalances = (accounts ?? []).reduce((sum, a) => sum + Number(a.balance), 0);
+  // Transferencia entre contas proprias nao altera o caixa consolidado.
   const netPaid = (paidTransactions ?? []).reduce(
-    (sum, t) => sum + (t.type === "receita" ? Number(t.amount) : -Number(t.amount)),
+    (sum, t) => sum + signedAmountTotal(t),
     0
   );
   const saldoAtual = initialBalances + netPaid;
@@ -392,10 +396,12 @@ export default async function DashboardPage({
                 className={
                   t.type === "receita"
                     ? "text-sm font-medium tabular-nums text-success"
-                    : "text-sm font-medium tabular-nums text-destructive"
+                    : t.type === "despesa"
+                      ? "text-sm font-medium tabular-nums text-destructive"
+                      : "text-sm font-medium tabular-nums text-muted-foreground"
                 }
               >
-                {t.type === "receita" ? "+ " : "- "}
+                {TRANSACTION_TYPE_SIGN[t.type]}
                 {formatCurrency(t.amount)}
               </span>
             </div>

@@ -20,6 +20,8 @@ import { transactionsApi } from "@/hooks/use-transactions";
 import {
   TRANSACTION_STATUS_BADGE_VARIANT as STATUS_BADGE_VARIANT,
   TRANSACTION_STATUS_LABELS as STATUS_LABELS,
+  TRANSACTION_TYPE_LABELS as TYPE_LABELS,
+  TRANSACTION_TYPE_SIGN as TYPE_SIGN,
 } from "@/lib/labels";
 import { DreView } from "@/components/reports/dre-view";
 import type { TransactionType, TransactionWithRelations } from "@/types/database";
@@ -58,7 +60,7 @@ function rowsToTable(rows: TransactionWithRelations[]) {
     t.description,
     t.categories?.name ?? "-",
     t.accounts?.bank ?? "-",
-    t.type === "receita" ? "Receita" : "Despesa",
+    TYPE_LABELS[t.type],
     formatCurrency(t.amount),
     STATUS_LABELS[t.status],
   ]);
@@ -81,7 +83,7 @@ async function exportExcel(rows: TransactionWithRelations[]) {
     Descricao: t.description,
     Categoria: t.categories?.name ?? "-",
     Conta: t.accounts?.bank ?? "-",
-    Tipo: t.type === "receita" ? "Receita" : "Despesa",
+    Tipo: TYPE_LABELS[t.type],
     Valor: t.amount,
     Status: STATUS_LABELS[t.status],
   }));
@@ -314,9 +316,15 @@ export default function ReportsPage() {
                     {t.accounts?.bank ?? "-"}
                   </TableCell>
                   <TableCell
-                    className={t.type === "receita" ? "text-success" : "text-destructive"}
+                    className={
+                      t.type === "receita"
+                        ? "tabular-nums text-success"
+                        : t.type === "despesa"
+                          ? "tabular-nums text-destructive"
+                          : "tabular-nums text-muted-foreground"
+                    }
                   >
-                    {t.type === "receita" ? "+ " : "- "}
+                    {TYPE_SIGN[t.type]}
                     {formatCurrency(t.amount)}
                   </TableCell>
                   <TableCell>
