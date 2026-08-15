@@ -31,6 +31,8 @@ export interface Client {
   contact: string | null;
   email: string | null;
   phone: string | null;
+  document: string | null;
+  address: string | null;
   created_by: string | null;
   created_at: string;
 }

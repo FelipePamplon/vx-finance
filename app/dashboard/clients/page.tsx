@@ -39,6 +39,8 @@ const clientSchema = z.object({
   contact: z.string().optional(),
   email: z.string().email("E-mail inválido").optional().or(z.literal("")),
   phone: z.string().optional(),
+  document: z.string().optional(),
+  address: z.string().optional(),
 });
 
 type ClientFormValues = z.infer<typeof clientSchema>;
@@ -48,6 +50,8 @@ const defaultValues: ClientFormValues = {
   contact: "",
   email: "",
   phone: "",
+  document: "",
+  address: "",
 };
 
 export default function ClientsPage() {
@@ -83,6 +87,8 @@ export default function ClientsPage() {
       contact: client.contact ?? "",
       email: client.email ?? "",
       phone: client.phone ?? "",
+      document: client.document ?? "",
+      address: client.address ?? "",
     });
     setOpen(true);
   }
@@ -221,6 +227,16 @@ export default function ClientsPage() {
                 <Label htmlFor="phone">Telefone</Label>
                 <Input id="phone" {...register("phone")} />
               </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="document">CNPJ / CPF (opcional)</Label>
+              <Input id="document" {...register("document")} />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="address">Endereço (opcional)</Label>
+              <Input id="address" {...register("address")} />
             </div>
 
             <DialogFooter>
