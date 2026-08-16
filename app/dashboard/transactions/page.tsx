@@ -368,9 +368,10 @@ export default function TransactionsPage() {
               </TableCell>
               <TableCell className="text-muted-foreground">
                 {transaction.accounts?.bank ?? "-"}
-                {transaction.type === "transferencia" && (
-                  <span className="text-xs"> → destino</span>
-                )}
+                {transaction.type === "transferencia" &&
+                  transaction.transfer_accounts?.bank && (
+                    <span className="text-xs"> → {transaction.transfer_accounts.bank}</span>
+                  )}
               </TableCell>
               <TableCell
                 className={

@@ -85,6 +85,8 @@ export interface Transaction {
 
 export interface TransactionWithRelations extends Transaction {
   accounts: { bank: string } | null;
+  /** Conta de destino da transferencia (alias do embed pela FK transfer_account_id). */
+  transfer_accounts: { bank: string } | null;
   categories: { name: string; color: string } | null;
   clients: { company: string } | null;
   projects: { name: string } | null;

@@ -3,6 +3,10 @@
 -- Rodar no Supabase: Dashboard > SQL Editor > New query > colar e executar
 
 -- 1) Novas colunas
+-- ATENCAO: transfer_account_id cria uma SEGUNDA chave estrangeira de transactions
+-- para accounts. A partir daqui, todo select do PostgREST que embute `accounts(...)`
+-- precisa nomear a constraint (ex.: accounts!transactions_account_id_fkey(bank)),
+-- senao a consulta falha por ambiguidade e a tela volta vazia.
 alter table public.transactions
   add column if not exists due_date date,
   add column if not exists paid_date date,
