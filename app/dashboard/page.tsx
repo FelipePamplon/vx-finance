@@ -17,7 +17,7 @@ import {
   type CategorySlice,
 } from "@/components/charts/category-breakdown-chart";
 import { MonthSelector } from "@/components/dashboard/month-selector";
-import type { TransactionType } from "@/types/database";
+import type { TransactionStatus, TransactionType } from "@/types/database";
 
 function formatCurrency(value: number) {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -41,6 +41,7 @@ interface RecentTransactionRow {
   amount: number;
   type: TransactionType;
   date: string;
+  status: TransactionStatus;
   categories: { name: string } | null;
 }
 
@@ -87,14 +88,20 @@ export default async function DashboardPage({
   ] = await Promise.all([
     supabase.from("accounts").select("balance"),
     supabase.from("transactions").select("amount, type").eq("status", "pago"),
+    // Este painel mostra caixa realizado: entradas, saidas, grafico e quebra por
+    // categoria contam apenas o que foi efetivamente pago/recebido. Sem esse filtro
+    // uma previsao "pendente" (ou um lancamento cancelado) entrava como receita do
+    // mes e inflava o resultado.
     supabase
       .from("transactions")
       .select("amount, type, date, category_id, categories(name,color)")
+      .eq("status", "pago")
       .gte("date", twelveMonthsAgo)
       .lte("date", monthEnd),
     supabase
       .from("transactions")
-      .select("id, description, amount, type, date, categories(name)")
+      .select("id, description, amount, type, date, status, categories(name)")
+      .neq("status", "cancelado")
       .order("date", { ascending: false })
       .limit(8),
   ]);
@@ -390,6 +397,7 @@ export default async function DashboardPage({
                 <span className="text-xs text-muted-foreground">
                   {formatDate(t.date)}
                   {t.categories ? ` · ${t.categories.name}` : ""}
+                  {t.status === "pendente" ? " · pendente" : ""}
                 </span>
               </div>
               <span

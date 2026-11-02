@@ -1,5 +1,5 @@
-import { signedAmountOnStatement } from "@/lib/finance";
-import type { TransactionType } from "@/types/database";
+import { signedAmountForAccount, signedAmountOnStatement } from "@/lib/finance";
+import type { TransactionStatus, TransactionType } from "@/types/database";
 
 export interface BankEntry {
   date: string;
@@ -13,6 +13,20 @@ export interface ReconcilableTransaction {
   paid_date?: string | null;
   amount: number;
   type: TransactionType;
+  status?: TransactionStatus;
+  account_id?: string | null;
+  transfer_account_id?: string | null;
+}
+
+export interface ReconcileOptions {
+  /**
+   * Conta do extrato que esta sendo conferido. Sem ela a conciliacao compara o
+   * extrato de uma conta contra lancamentos de TODAS as contas, e um valor igual
+   * em outro banco aparece como "conciliado" - foi assim que lancamentos faltantes
+   * do Inter passaram batido. Com ela, o sinal tambem sai certo: numa
+   * transferencia a conta de destino recebe credito, nao debito.
+   */
+  accountId?: string;
 }
 
 export interface ReconciledEntry extends BankEntry {
@@ -73,17 +87,34 @@ function isAmountLike(raw: string): boolean {
   return parseAmount(raw) !== null && /\d/.test(raw);
 }
 
-function detectDelimiter(line: string): string {
-  const candidates = [",", ";", "\t"];
-  let best = ",";
-  let bestCount = -1;
+/**
+ * Descobre o separador olhando o arquivo inteiro, nao so a primeira linha.
+ * Extratos de banco (o do Inter, por exemplo) comecam com linhas de cabecalho
+ * tipo " Extrato Conta Corrente " e "Conta ;521205271": a primeira linha nao tem
+ * separador nenhum, e adivinhar por ela fazia o arquivo inteiro ser descartado.
+ * O criterio aqui e util de verdade: ganha o separador que produz mais linhas
+ * com uma data E um valor reconheciveis - exatamente o que o parser precisa.
+ */
+function detectDelimiter(lines: string[]): string {
+  const candidates = [";", ",", "\t"];
+  let best = candidates[0];
+  let bestScore = -1;
+
   for (const candidate of candidates) {
-    const count = line.split(candidate).length - 1;
-    if (count > bestCount) {
-      bestCount = count;
+    let score = 0;
+    for (const line of lines) {
+      const cells = line.split(candidate).map((c) => c.trim().replace(/^"|"$/g, ""));
+      if (cells.length < 2) continue;
+      const dateIndex = cells.findIndex((c) => isDateLike(c));
+      if (dateIndex === -1) continue;
+      if (cells.some((c, i) => i !== dateIndex && isAmountLike(c))) score++;
+    }
+    if (score > bestScore) {
+      bestScore = score;
       best = candidate;
     }
   }
+
   return best;
 }
 
@@ -93,7 +124,7 @@ export function parseCsvStatement(text: string): BankEntry[] {
     throw new StatementParseError("O arquivo está vazio.");
   }
 
-  const delimiter = detectDelimiter(lines[0]);
+  const delimiter = detectDelimiter(lines);
   const entries: BankEntry[] = [];
   let skippedRows = 0;
 
@@ -131,8 +162,10 @@ export function parseCsvStatement(text: string): BankEntry[] {
       continue;
     }
 
+    // Coluna numerica nunca e descricao. Sem isso, a coluna "Saldo" do extrato
+    // entrava no texto do lancamento ("Pix enviado Tms Digital 6.885,94").
     const description = cells
-      .filter((_, i) => i !== dateIndex && i !== amountIndex)
+      .filter((_, i) => i !== dateIndex && !amountIndexes.includes(i))
       .join(" ")
       .trim();
 
@@ -196,16 +229,28 @@ export function parseStatementFile(filename: string, text: string): BankEntry[] 
 
 export function reconcile(
   bankEntries: BankEntry[],
-  transactions: ReconcilableTransaction[]
+  transactions: ReconcilableTransaction[],
+  options: ReconcileOptions = {}
 ): ReconciledEntry[] {
+  const { accountId } = options;
   const used = new Set<string>();
+
+  // Lancamento cancelado nao existe no extrato: se ele puder casar, esconde a
+  // linha de verdade que ainda falta registrar.
+  const candidates = transactions.filter((t) => {
+    if (t.status === "cancelado") return false;
+    if (!accountId) return true;
+    return t.account_id === accountId || t.transfer_account_id === accountId;
+  });
 
   return bankEntries.map((entry) => {
     const entryDate = new Date(`${entry.date}T00:00:00`).getTime();
 
-    const match = transactions.find((t) => {
+    const match = candidates.find((t) => {
       if (used.has(t.id)) return false;
-      const signedAmount = signedAmountOnStatement(t);
+      const signedAmount = accountId
+        ? signedAmountForAccount(t, accountId)
+        : signedAmountOnStatement(t);
       const amountMatches = Math.abs(signedAmount - entry.amount) < 0.01;
       // O extrato reflete a data em que o dinheiro se moveu, nao a competencia.
       const tDate = new Date(`${t.paid_date ?? t.date}T00:00:00`).getTime();

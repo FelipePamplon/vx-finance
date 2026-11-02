@@ -132,6 +132,10 @@ export default function ReportsPage() {
 
   const filteredRows = useMemo(() => {
     return (transactions ?? []).filter((t) => {
+      // Lancamento cancelado e dinheiro que nao se moveu: fora do fluxo, do DRE
+      // e das exportacoes. Sem isso, uma previsao cancelada continuava somando
+      // receita no resultado do periodo.
+      if (t.status === "cancelado") return false;
       if (t.date < dateFrom || t.date > dateTo) return false;
       if (typeFilter !== "todos" && t.type !== typeFilter) return false;
       return true;
