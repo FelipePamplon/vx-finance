@@ -1,7 +1,7 @@
 # ADR-0002: Conciliação do extrato Inter e correção do saldo consolidado
 
 **Status:** Aceito
-**Data:** 2026-11-02
+**Data:** 2026-11-02 (atualizado no mesmo dia com a posição real dos CDBs — item 8)
 **Decisores:** Felipe Pamplona (admin)
 
 ## Contexto
@@ -109,26 +109,57 @@ numérica (Saldo) não entra mais no texto da descrição.
 
 Conferido contra o extrato, com script de verificação independente:
 
-| Conta | Saldo |
-|---|---|
-| Inter (corrente) | R$ 6.885,94 — **igual ao extrato** |
-| Inter CDB | R$ 61.286,15 |
-| Bradesco (encerrada) | R$ 0,00 |
-| **Total consolidado** | **R$ 68.172,09** |
+| Conta | Saldo | Confere com |
+|---|---|---|
+| Inter (corrente) | R$ 6.885,94 | extrato oficial |
+| Inter CDB Porquinho | R$ 61.296,61 | valor líquido no app |
+| Inter CDB Crédito | R$ 494,54 | valor líquido no app |
+| Bradesco (encerrada) | R$ 0,00 | confirmado pelo usuário |
+| **Total consolidado** | **R$ 68.677,09** | |
 
 Os 25 dias com movimento fecham com o saldo do extrato, um a um, e as 43 linhas
 conciliam 43/43 na tela de Conciliação Bancária.
 
-O Saldo Atual deixa de ser R$ 74.530,70 e passa a R$ 68.172,09 — a conta
+O Saldo Atual deixa de ser R$ 74.530,70 e passa a R$ 68.677,09 — a conta
 corrente bate com o banco, e a diferença em relação aos R$ 6.885,94 do extrato é
-exatamente o que está aplicado no CDB, que o extrato da conta corrente não
-mostra.
+o que está aplicado nos CDBs, que o extrato da conta corrente não mostra.
+
+### 8. Posição real dos CDBs (migration 0009)
+
+A 0008 fechou os CDBs em R$ 61.286,15 — apenas o principal que o extrato da
+conta corrente comprova ter saído e não voltado. A posição do app em 02/11/2026
+mostrou dois produtos distintos, agora contas separadas:
+
+| | Porquinho Dia a Dia PJ | Crédito (garantia do cartão) |
+|---|---|---|
+| bruto | 61.429,10 | 496,47 |
+| ganhos | 369,20 | 8,65 |
+| IR/IOF | 132,49 | 1,93 |
+| líquido | 61.296,61 | 494,54 |
+
+Dois cruzamentos independentes validam a leitura: o principal do CDB Crédito
+(bruto − ganhos = R$ 487,82) é exatamente o "Limite total" da tela de limite
+investido do cartão, e `líquido = bruto − IR/IOF` fecha nos dois produtos.
+
+Daí saem R$ 261,57 (R$ 201,67 no Crédito, R$ 59,90 no Porquinho) que já estavam
+aplicados antes de 05/08/2026, lançados como saldo inicial de cada conta. **Isso
+não mexe na conta corrente:** o extrato fixa a abertura dela em R$ 1.305,40, e
+esse dinheiro já tinha saído antes disso.
+
+O rendimento entra como receita e o IR/IOF como provisão, para que o saldo exiba
+o **valor líquido** — o que sobra se o dinheiro for sacado hoje, que é o número
+em destaque no app.
+
+**Alternativa considerada:** deixar o CDB pelo valor bruto e ignorar o imposto.
+Rejeitada: o Saldo Atual passaria a prometer R$ 134,42 que o banco retém no
+resgate. **Contrapartida:** no dia do resgate, lançar o valor bruto e estornar a
+provisão, para não contar o imposto duas vezes — está escrito na descrição dos
+dois lançamentos.
 
 ### Pendências conhecidas
 
-1. **Saldo do CDB a confirmar.** R$ 61.286,15 é o que o extrato da conta corrente
-   comprova ter sido aplicado e não resgatado; não inclui rendimento acumulado,
-   que não aparece nesse documento. O extrato do CDB fecha o número.
+1. **Fatura do cartão de R$ 296,94 em aberto** (limite utilizado do CDB Crédito)
+   não foi lançada como conta a pagar: o documento não traz o vencimento.
 2. **Pix recebido de R$ 4.393,54 em 27/08** está classificado como transferência
    do Bradesco, mas o extrato descreve "Pix recebido - 64.341.655 Djalma Freitas
    Cardoso", ou seja, CNPJ de terceiro. Não foi reclassificado por decisão
