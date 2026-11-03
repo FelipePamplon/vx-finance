@@ -41,11 +41,19 @@ import {
 } from "@/components/ui/table";
 import { categoriesApi } from "@/hooks/use-categories";
 import { CATEGORY_ICONS, CATEGORY_ICON_OPTIONS } from "@/lib/icons";
-import type { Category } from "@/types/database";
+import type { Category, DreSection } from "@/types/database";
+
+const DRE_SECTION_LABELS: Record<DreSection, string> = {
+  operacional: "Operacional — receita ou custo do negócio",
+  imposto: "Imposto sobre faturamento — deduz da receita bruta",
+  financeira: "Financeira — rendimento e IR/IOF de aplicação",
+  distribuicao: "Distribuição de lucros — abaixo do resultado",
+};
 
 const categorySchema = z.object({
   name: z.string().min(2, "Nome muito curto"),
   type: z.enum(["receita", "despesa"]),
+  dre_section: z.enum(["operacional", "imposto", "financeira", "distribuicao"]),
   color: z.string().min(4),
   icon: z.string().min(1),
 });
@@ -55,6 +63,7 @@ type CategoryFormValues = z.infer<typeof categorySchema>;
 const defaultValues: CategoryFormValues = {
   name: "",
   type: "despesa",
+  dre_section: "operacional",
   color: "#c9a227",
   icon: "wallet",
 };
@@ -92,6 +101,7 @@ export default function CategoriesPage() {
     reset({
       name: category.name,
       type: category.type,
+      dre_section: category.dre_section ?? "operacional",
       color: category.color,
       icon: category.icon ?? "wallet",
     });
@@ -120,6 +130,7 @@ export default function CategoriesPage() {
 
   const watchedIcon = watch("icon");
   const watchedType = watch("type");
+  const watchedSection = watch("dre_section");
 
   return (
     <div className="flex flex-col gap-6">
@@ -244,6 +255,29 @@ export default function CategoriesPage() {
                   <SelectItem value="despesa">Despesa</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label>Onde entra no DRE</Label>
+              <Select
+                value={watchedSection}
+                onValueChange={(value) => setValue("dre_section", value as DreSection)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(DRE_SECTION_LABELS).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Não muda saldo de conta — só a camada do resultado. Imposto e
+                distribuição saem do banco como qualquer despesa.
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-4">

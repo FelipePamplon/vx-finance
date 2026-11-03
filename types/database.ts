@@ -1,5 +1,11 @@
 /** Categorias so classificam dinheiro que entra ou sai; transferencia nao tem categoria. */
 export type CategoryType = "receita" | "despesa";
+/**
+ * Onde a categoria entra no DRE. Nao afeta saldo de conta: imposto e
+ * distribuicao saem do banco como qualquer despesa, o que muda e so em que
+ * camada do resultado elas aparecem.
+ */
+export type DreSection = "operacional" | "imposto" | "financeira" | "distribuicao";
 export type TransactionType = CategoryType | "transferencia";
 export type TransactionStatus = "pendente" | "pago" | "cancelado";
 export type AccountType = "corrente" | "poupanca" | "investimento" | "caixa";
@@ -12,6 +18,7 @@ export interface Category {
   color: string;
   icon: string | null;
   type: CategoryType;
+  dre_section: DreSection;
   created_by: string | null;
   created_at: string;
 }
@@ -87,7 +94,7 @@ export interface TransactionWithRelations extends Transaction {
   accounts: { bank: string } | null;
   /** Conta de destino da transferencia (alias do embed pela FK transfer_account_id). */
   transfer_accounts: { bank: string } | null;
-  categories: { name: string; color: string } | null;
+  categories: { name: string; color: string; dre_section: DreSection } | null;
   clients: { company: string } | null;
   projects: { name: string } | null;
 }
