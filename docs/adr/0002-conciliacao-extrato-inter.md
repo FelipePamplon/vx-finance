@@ -1,7 +1,7 @@
 # ADR-0002: Conciliação do extrato Inter e correção do saldo consolidado
 
 **Status:** Aceito
-**Data:** 2026-11-02 (atualizado com os itens 8 a 13, à medida que novos extratos chegaram: CDBs, estornos e os extratos do Inter e do Bradesco que fecham o histórico)
+**Data:** 2026-11-02 (atualizado com os itens 8 a 14, à medida que novos extratos chegaram: CDBs, estornos e os extratos do Inter e do Bradesco que fecham o histórico)
 **Decisores:** Felipe Pamplona (admin)
 
 ## Contexto
@@ -281,11 +281,19 @@ padrão dos estornos do item 9.
 Devolução de transferência é transferência no sentido inverso. Vira um único
 lançamento Inter → Bradesco, neutro no caixa e fora do DRE. Nenhum saldo muda.
 
+### 14. Fatura do cartão em aberto (migration 0015)
+
+O "Limite utilizado" de R$ 296,94 do CDB Crédito é fatura em aberto — dinheiro
+já gasto e ainda a pagar. Vencimento informado pelo titular: **10/11/2026**.
+
+Entra como **pendente**, não como paga: não altera o Saldo Atual, não entra como
+despesa realizada no painel (que filtra por status desde o item 6) e aparece em
+Contas a Pagar e nos alertas de vencimento. Quando for paga, basta marcar na
+tela; o valor passa a abater o caixa.
+
 ### Pendências conhecidas
 
-1. **Fatura do cartão de R$ 296,94 em aberto** (limite utilizado do CDB Crédito)
-   não foi lançada como conta a pagar: o documento não traz o vencimento.
-2. **Bradesco entre 26/04 e 09/07/2026** é o único intervalo sem extrato. Os
+1. **Bradesco entre 26/04 e 09/07/2026** é o único intervalo sem extrato. Os
    saldos nas duas pontas estão provados (R$ 46.534,95 e R$ 10.080,91), e o
    histórico registrado liga uma à outra, mas os lançamentos do meio não foram
    conferidos linha a linha.
