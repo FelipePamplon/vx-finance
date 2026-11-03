@@ -1,7 +1,7 @@
 # ADR-0002: Conciliação do extrato Inter e correção do saldo consolidado
 
 **Status:** Aceito
-**Data:** 2026-11-02 (atualizado com a posição real dos CDBs — item 8 —, o tratamento de estornos — item 9 — e a confirmação do Pix de 27/08)
+**Data:** 2026-11-02 (atualizado com os itens 8 a 10: posição real dos CDBs, tratamento de estornos e o extrato de 01/03 a 31/07 que fecha o histórico)
 **Decisores:** Felipe Pamplona (admin)
 
 ## Contexto
@@ -111,7 +111,7 @@ Conferido contra o extrato, com script de verificação independente:
 
 | Conta | Saldo | Confere com |
 |---|---|---|
-| Inter (corrente) | R$ 6.885,94 | extrato oficial |
+| Inter (corrente) | R$ 6.885,94 | extratos oficiais (01/03 a 02/11) |
 | Inter CDB Porquinho | R$ 61.296,61 | valor líquido no app |
 | Inter CDB Crédito | R$ 494,54 | valor líquido no app |
 | Bradesco (encerrada) | R$ 0,00 | confirmado pelo usuário |
@@ -190,21 +190,55 @@ Efeitos colaterais tratados: o prefixo de sinal era fixo por tipo e escrevia
 não do tipo; o gráfico de pizza passa a descartar categoria com líquido ≤ 0, que
 não existe como fatia; e o formulário aceita valor negativo apenas em despesa.
 
+### 10. Extrato de 01/03 a 31/07/2026: histórico fechado (migration 0012)
+
+Com o extrato do período que faltava, a conta corrente passa a ter lastro
+documental **do início**. Duas constatações do documento:
+
+- a cadeia das 307 linhas está íntegra e a conta **abriu em R$ 0,00 em
+  01/03/2026**. O "Saldo inicial" de R$ 291,20 era um número sem lastro e foi
+  zerado — o Inter deixa de ter qualquer plug;
+- o extrato fecha 31/07 em R$ 1.543,94 e, com o único lançamento de 04/08 já
+  registrado (PM BELEM, −R$ 238,54), chega a R$ 1.305,40: **exatamente a
+  abertura do extrato seguinte**. Os dois documentos encaixam sem folga.
+
+**Correção de uma conclusão anterior (item 3).** A reconstituição de R$ 698,77
+em 04/08 estava errada na data. O raciocínio — os resgates de 13/08 provam
+dinheiro aplicado antes — continua válido, mas o encaixe exato entre os dois
+extratos não deixa espaço para nada em 04/08 além do PM BELEM. As aplicações
+reais estão neste extrato, espalhadas por março a julho. As duas linhas foram
+removidas e substituídas por 21 movimentos de CDB documentados.
+
+Divergências: 18 dias de 85 (os outros 67 já batiam) — 21 movimentos de CDB
+Crédito nunca registrados, 4 transferências do Bradesco com data trocada em um
+dia, e 1 despesa no Inter que o extrato não mostra.
+
+Resultado: **0 dias divergentes, 307 lançamentos de cada lado**, e o extrato de
+agosto a novembro continua 43/43.
+
 ### Pendências conhecidas
 
 1. **Fatura do cartão de R$ 296,94 em aberto** (limite utilizado do CDB Crédito)
    não foi lançada como conta a pagar: o documento não traz o vencimento.
-2. **Estorno de R$ 110,00 de 16/03/2026 no Bradesco** não encontrou gasto
+2. **"MUDANÇA DE PORTE" de R$ 450,00 em 22/07** não existe no extrato do Inter,
+   que está completo no período — logo esse dinheiro não saiu do Inter. Foi
+   movida para o Bradesco, preservando a despesa no DRE em vez de apagá-la, mas
+   o Bradesco não tem extrato para confirmar. Se a despesa nunca existiu, marcar
+   como cancelada.
+3. **Estorno de R$ 110,00 de 16/03/2026 no Bradesco** não encontrou gasto
    correspondente na mesma conta e ficou sem categoria.
-3. **Possíveis duplicatas em mar–jul/2026** (sete pares idênticos de data, valor
-   e descrição, R$ 28,30 líquidos no Inter). Não foram removidas: corridas de
-   aplicativo repetidas no mesmo dia são plausíveis, e sem extrato do período não
-   há como distinguir. Removê-las *aumentaria* o saldo, então não explicam a
-   divergência original.
-4. **Histórico anterior a 05/08/2026 não conferido** por falta de extratos.
 
 ### Pendências resolvidas
 
+- **Histórico anterior a 05/08/2026 (migration 0012).** Conferido contra o
+  extrato de 01/03 a 31/07: 307 linhas, 0 divergências. O período de fevereiro
+  pertence ao Bradesco, não ao Inter.
+- **Possíveis duplicatas em mar–jul/2026.** Eram sete pares idênticos de data,
+  valor e descrição, que eu não removi por não ter como distinguir. O extrato
+  confirma que **são lançamentos reais**: corridas de aplicativo repetidas no
+  mesmo dia. Os dois Pix de R$ 110,00 de 15/03, que pareciam o caso mais
+  suspeito, são dois recebimentos distintos — estavam apenas com data trocada
+  para 16/03.
 - **Pix de R$ 4.393,54 em 27/08 (migration 0011).** Ficou em aberto porque o
   extrato descreve "Pix recebido - 64.341.655 Djalma Freitas Cardoso", nome de
   terceiro, enquanto o lançamento era transferência entre contas próprias. Não
