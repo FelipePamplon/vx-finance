@@ -25,6 +25,7 @@ import {
   transactionAmountTone,
 } from "@/lib/labels";
 import { DreView } from "@/components/reports/dre-view";
+import { TaxView } from "@/components/reports/tax-view";
 import type { TransactionType, TransactionWithRelations } from "@/types/database";
 
 function todayISO() {
@@ -129,7 +130,7 @@ export default function ReportsPage() {
   const [dateFrom, setDateFrom] = useState(yearStartISO());
   const [dateTo, setDateTo] = useState(todayISO());
   const [typeFilter, setTypeFilter] = useState<"todos" | TransactionType>("todos");
-  const [view, setView] = useState<"fluxo" | "dre">("fluxo");
+  const [view, setView] = useState<"fluxo" | "dre" | "fiscal">("fluxo");
 
   const filteredRows = useMemo(() => {
     return (transactions ?? []).filter((t) => {
@@ -142,6 +143,14 @@ export default function ReportsPage() {
       return true;
     });
   }, [transactions, dateFrom, dateTo, typeFilter]);
+
+  // A posicao fiscal confronta faturamento com DAS lancado, entao precisa dos
+  // dois lados: o filtro de tipo distorceria a apuracao. So o periodo vale aqui.
+  const fiscalRows = useMemo(() => {
+    return (transactions ?? []).filter(
+      (t) => t.status !== "cancelado" && t.date >= dateFrom && t.date <= dateTo
+    );
+  }, [transactions, dateFrom, dateTo]);
 
   const summary = useMemo(() => {
     const entradas = filteredRows
@@ -206,6 +215,14 @@ export default function ReportsPage() {
           onClick={() => setView("dre")}
         >
           DRE
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={view === "fiscal" ? "default" : "outline"}
+          onClick={() => setView("fiscal")}
+        >
+          Posição Fiscal
         </Button>
       </div>
 
@@ -344,6 +361,10 @@ export default function ReportsPage() {
       )}
 
       {view === "dre" && <DreView rows={filteredRows} />}
+
+      {view === "fiscal" && (
+        <TaxView rows={fiscalRows} inicioAtividade="2026-01" />
+      )}
     </div>
   );
 }

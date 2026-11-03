@@ -10,6 +10,6 @@ export const transactionsApi = createCrudHooks<TransactionWithRelations>(
     orderBy: "date",
     ascending: false,
     select:
-      "*, accounts!transactions_account_id_fkey(bank), transfer_accounts:accounts!transactions_transfer_account_id_fkey(bank), categories(name,color), clients(company), projects(name)",
+      "*, accounts!transactions_account_id_fkey(bank), transfer_accounts:accounts!transactions_transfer_account_id_fkey(bank), categories(name,color,dre_section), clients(company), projects(name)",
   }
 );
