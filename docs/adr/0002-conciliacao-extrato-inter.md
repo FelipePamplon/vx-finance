@@ -1,7 +1,7 @@
 # ADR-0002: Conciliação do extrato Inter e correção do saldo consolidado
 
 **Status:** Aceito
-**Data:** 2026-11-02 (atualizado com os itens 8 a 11: posição real dos CDBs, tratamento de estornos e os extratos de 01/03 a 31/07 do Inter e do Bradesco, que fecham o histórico)
+**Data:** 2026-11-02 (atualizado com os itens 8 a 13, à medida que novos extratos chegaram: CDBs, estornos e os extratos do Inter e do Bradesco que fecham o histórico)
 **Decisores:** Felipe Pamplona (admin)
 
 ## Contexto
@@ -117,8 +117,9 @@ Conferido contra o extrato, com script de verificação independente:
 | Bradesco (encerrada) | R$ 0,00 | extrato oficial (10/07 a 08/09) |
 | **Total consolidado** | **R$ 68.677,09** | |
 
-Os três extratos conciliam integralmente: Inter 307/307 (01/03–31/07) e 43/43
-(05/08–02/11), Bradesco 24/24 (10/07–08/09), sem um único dia divergente.
+Os quatro extratos conciliam integralmente — Inter 307/307 (01/03–31/07) e
+43/43 (05/08–02/11), Bradesco 84/84 (24/02–25/04) e 24/24 (10/07–08/09) — sem um
+único dia divergente, salvo uma diferença de postagem entre bancos de um dia.
 
 Os 25 dias com movimento fecham com o saldo do extrato, um a um, e as 43 linhas
 conciliam 43/43 na tela de Conciliação Bancária.
@@ -244,12 +245,50 @@ apenas R$ 42,87 e R$ 59,90 nos dois CDBs, derivados da posição do app.
 Divergências: 4 dias de 9 — 3 rendimentos de aplicação automática que faltavam,
 e o pagamento a Noel Antunes datado de 29/08 em vez de 27/08.
 
+### 12. Extrato do Bradesco de 24/02 a 25/04: histórico validado sem alteração
+
+Mesma conta, período anterior. Cadeia das 84 linhas íntegra: abre em
+R$ 79.044,04 (antes de 24/02) e fecha em R$ 46.534,95.
+
+**O movimento já registrado no sistema antes de 24/02 soma exatamente
+R$ 79.044,04** — idêntico à abertura que o extrato prova. E das 22 datas com
+movimento, apenas uma diverge, por motivo que não é erro (abaixo). Ou seja: o
+histórico do Bradesco de fevereiro a abril **estava correto e não precisou de
+nenhuma correção**.
+
+Com isso o Bradesco está conferido em quatro pontos independentes: R$ 79.044,04
+em 23/02, R$ 46.534,95 em 25/04, R$ 10.080,91 em 10/07 e R$ 0,00 em 27/08.
+
+**Diferença de data entre bancos.** Os dois Pix de R$ 110,00 aparecem em 15/03
+no Inter e em 16/03 no Bradesco — a própria descrição do Bradesco diz "15/03",
+então é diferença de postagem, não erro. Um lançamento só tem uma data e a
+competência é 15/03. A conciliação tolera 2 dias, então os dois extratos
+continuam batendo.
+
+### 13. Devolução de Pix de R$ 110,00 como transferência (migration 0014)
+
+O extrato fechou a história dos R$ 110,00. A sequência real: o Bradesco envia
+dois Pix de R$ 110,00 ao Inter em 15/03 e **um deles volta** — o Inter registra
+"Pix recebido devolvido" −110,00 e o Bradesco registra "DEVOLUCAO PIX" +110,00.
+
+Esses dois são **as duas pernas da mesma devolução**, mas estavam lançados como
+duas despesas separadas: uma de R$ 110,00 no Inter categorizada como
+**"Software"** — inflando essa categoria com um gasto que nunca existiu — e
+outra de −R$ 110,00 no Bradesco, sem categoria. O efeito no caixa se cancelava,
+então os saldos estavam certos e o erro ficava invisível: exatamente o mesmo
+padrão dos estornos do item 9.
+
+Devolução de transferência é transferência no sentido inverso. Vira um único
+lançamento Inter → Bradesco, neutro no caixa e fora do DRE. Nenhum saldo muda.
+
 ### Pendências conhecidas
 
 1. **Fatura do cartão de R$ 296,94 em aberto** (limite utilizado do CDB Crédito)
    não foi lançada como conta a pagar: o documento não traz o vencimento.
-2. **Estorno de R$ 110,00 de 16/03/2026 no Bradesco** não encontrou gasto
-   correspondente na mesma conta e ficou sem categoria.
+2. **Bradesco entre 26/04 e 09/07/2026** é o único intervalo sem extrato. Os
+   saldos nas duas pontas estão provados (R$ 46.534,95 e R$ 10.080,91), e o
+   histórico registrado liga uma à outra, mas os lançamentos do meio não foram
+   conferidos linha a linha.
 
 ### Pendências resolvidas
 
