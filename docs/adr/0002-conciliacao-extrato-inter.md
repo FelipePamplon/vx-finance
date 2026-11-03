@@ -1,7 +1,7 @@
 # ADR-0002: Conciliação do extrato Inter e correção do saldo consolidado
 
 **Status:** Aceito
-**Data:** 2026-11-02 (atualizado com os itens 8 a 10: posição real dos CDBs, tratamento de estornos e o extrato de 01/03 a 31/07 que fecha o histórico)
+**Data:** 2026-11-02 (atualizado com os itens 8 a 11: posição real dos CDBs, tratamento de estornos e os extratos de 01/03 a 31/07 do Inter e do Bradesco, que fecham o histórico)
 **Decisores:** Felipe Pamplona (admin)
 
 ## Contexto
@@ -114,8 +114,11 @@ Conferido contra o extrato, com script de verificação independente:
 | Inter (corrente) | R$ 6.885,94 | extratos oficiais (01/03 a 02/11) |
 | Inter CDB Porquinho | R$ 61.296,61 | valor líquido no app |
 | Inter CDB Crédito | R$ 494,54 | valor líquido no app |
-| Bradesco (encerrada) | R$ 0,00 | confirmado pelo usuário |
+| Bradesco (encerrada) | R$ 0,00 | extrato oficial (10/07 a 08/09) |
 | **Total consolidado** | **R$ 68.677,09** | |
+
+Os três extratos conciliam integralmente: Inter 307/307 (01/03–31/07) e 43/43
+(05/08–02/11), Bradesco 24/24 (10/07–08/09), sem um único dia divergente.
 
 Os 25 dias com movimento fecham com o saldo do extrato, um a um, e as 43 linhas
 conciliam 43/43 na tela de Conciliação Bancária.
@@ -216,20 +219,45 @@ dia, e 1 despesa no Inter que o extrato não mostra.
 Resultado: **0 dias divergentes, 307 lançamentos de cada lado**, e o extrato de
 agosto a novembro continua 43/43.
 
+### 11. Extrato do Bradesco: nenhuma conta tem mais plug (migration 0013)
+
+Extrato de 10/07 a 08/09/2026 da conta ag. 2700 / c/c 16332-5, titular
+**64.341.655 DJALMA FREITAS CARDOSO**. Cadeia das 24 linhas íntegra: abre em
+R$ 10.080,91 e fecha em **R$ 0,00 em 27/08**.
+
+Três confirmações documentais:
+
+1. O **último lançamento da conta** é um Pix de −R$ 4.393,54 com destino
+   "VX CAPITAL LTDA". É a transferência do item resolvido acima — agora prova
+   documental, não mais palavra do titular. E o titular ser aquele CNPJ explica
+   por que o Pix chega ao Inter com nome de terceiro.
+2. A conta **fecha em zero de fato**, esvaziada exatamente por essa
+   transferência. "Bradesco encerrado" deixa de ser premissa e vira fato.
+3. O movimento já registrado até 09/07 soma **exatamente R$ 10.080,91**, a
+   abertura que o extrato prova — ou seja, o histórico de fevereiro a julho do
+   Bradesco **estava correto**. O plug de R$ 471,49 era desnecessário e foi a
+   zero.
+
+**Nenhuma conta corrente do sistema tem mais saldo inicial inventado.** Restam
+apenas R$ 42,87 e R$ 59,90 nos dois CDBs, derivados da posição do app.
+
+Divergências: 4 dias de 9 — 3 rendimentos de aplicação automática que faltavam,
+e o pagamento a Noel Antunes datado de 29/08 em vez de 27/08.
+
 ### Pendências conhecidas
 
 1. **Fatura do cartão de R$ 296,94 em aberto** (limite utilizado do CDB Crédito)
    não foi lançada como conta a pagar: o documento não traz o vencimento.
-2. **"MUDANÇA DE PORTE" de R$ 450,00 em 22/07** não existe no extrato do Inter,
-   que está completo no período — logo esse dinheiro não saiu do Inter. Foi
-   movida para o Bradesco, preservando a despesa no DRE em vez de apagá-la, mas
-   o Bradesco não tem extrato para confirmar. Se a despesa nunca existiu, marcar
-   como cancelada.
-3. **Estorno de R$ 110,00 de 16/03/2026 no Bradesco** não encontrou gasto
+2. **Estorno de R$ 110,00 de 16/03/2026 no Bradesco** não encontrou gasto
    correspondente na mesma conta e ficou sem categoria.
 
 ### Pendências resolvidas
 
+- **"MUDANÇA DE PORTE" de R$ 450,00 em 22/07 (migration 0013).** A 0012 moveu a
+  despesa para o Bradesco por não constar no extrato do Inter, supondo que
+  tivesse saído de lá. O extrato do Bradesco mostra **um único** lançamento de
+  R$ 450,00 em 22/07 — o Pix para Marcela Stelmann, já registrado. Logo não saiu
+  de conta nenhuma: é lançamento que nunca aconteceu. Fica cancelado.
 - **Histórico anterior a 05/08/2026 (migration 0012).** Conferido contra o
   extrato de 01/03 a 31/07: 307 linhas, 0 divergências. O período de fevereiro
   pertence ao Bradesco, não ao Inter.
