@@ -21,7 +21,8 @@ import {
   TRANSACTION_STATUS_BADGE_VARIANT as STATUS_BADGE_VARIANT,
   TRANSACTION_STATUS_LABELS as STATUS_LABELS,
   TRANSACTION_TYPE_LABELS as TYPE_LABELS,
-  TRANSACTION_TYPE_SIGN as TYPE_SIGN,
+  formatTransactionAmount,
+  transactionAmountTone,
 } from "@/lib/labels";
 import { DreView } from "@/components/reports/dre-view";
 import type { TransactionType, TransactionWithRelations } from "@/types/database";
@@ -132,6 +133,10 @@ export default function ReportsPage() {
 
   const filteredRows = useMemo(() => {
     return (transactions ?? []).filter((t) => {
+      // Lancamento cancelado e dinheiro que nao se moveu: fora do fluxo, do DRE
+      // e das exportacoes. Sem isso, uma previsao cancelada continuava somando
+      // receita no resultado do periodo.
+      if (t.status === "cancelado") return false;
       if (t.date < dateFrom || t.date > dateTo) return false;
       if (typeFilter !== "todos" && t.type !== typeFilter) return false;
       return true;
@@ -317,15 +322,14 @@ export default function ReportsPage() {
                   </TableCell>
                   <TableCell
                     className={
-                      t.type === "receita"
+                      transactionAmountTone(t) === "positive"
                         ? "tabular-nums text-success"
-                        : t.type === "despesa"
+                        : transactionAmountTone(t) === "negative"
                           ? "tabular-nums text-destructive"
                           : "tabular-nums text-muted-foreground"
                     }
                   >
-                    {TYPE_SIGN[t.type]}
-                    {formatCurrency(t.amount)}
+                    {formatTransactionAmount(t)}
                   </TableCell>
                   <TableCell>
                     <Badge variant={STATUS_BADGE_VARIANT[t.status]}>

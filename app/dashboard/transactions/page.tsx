@@ -54,7 +54,8 @@ import { projectsApi } from "@/hooks/use-projects";
 import {
   TRANSACTION_STATUS_BADGE_VARIANT as STATUS_BADGE_VARIANT,
   TRANSACTION_STATUS_LABELS as STATUS_LABELS,
-  TRANSACTION_TYPE_SIGN as TYPE_SIGN,
+  formatTransactionAmount,
+  transactionAmountTone,
 } from "@/lib/labels";
 import { getAttachmentUrl, uploadAttachment } from "@/lib/storage";
 import type {
@@ -66,7 +67,8 @@ import type {
 const transactionSchema = z
   .object({
     description: z.string().min(2, "Descrição muito curta"),
-    amount: z.coerce.number().positive("Valor deve ser maior que zero"),
+    // Negativo e permitido em despesa para registrar estorno (despesa que voltou).
+    amount: z.coerce.number().refine((v) => v !== 0, "Valor não pode ser zero"),
     type: z.enum(["receita", "despesa", "transferencia"]),
     date: z.string().min(1, "Selecione uma data"),
     due_date: z.string().optional(),
@@ -80,6 +82,17 @@ const transactionSchema = z
   })
   // Transferencia nao tem categoria (nao e receita nem despesa), mas exige destino.
   .superRefine((values, ctx) => {
+    // So despesa aceita valor negativo, e so para registrar estorno: o dinheiro
+    // volta abatendo a categoria que gerou o gasto, em vez de virar receita.
+    if (values.amount < 0 && values.type !== "despesa") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["amount"],
+        message:
+          "Valor negativo só em despesa, para registrar estorno. Dinheiro que entra é receita.",
+      });
+    }
+
     if (values.type === "transferencia") {
       if (!values.transfer_account_id) {
         ctx.addIssue({
@@ -375,15 +388,14 @@ export default function TransactionsPage() {
               </TableCell>
               <TableCell
                 className={
-                  transaction.type === "receita"
+                  transactionAmountTone(transaction) === "positive"
                     ? "tabular-nums text-success"
-                    : transaction.type === "despesa"
+                    : transactionAmountTone(transaction) === "negative"
                       ? "tabular-nums text-destructive"
                       : "tabular-nums text-muted-foreground"
                 }
               >
-                {TYPE_SIGN[transaction.type]}
-                {formatCurrency(transaction.amount)}
+                {formatTransactionAmount(transaction)}
               </TableCell>
               <TableCell>
                 <Badge variant={STATUS_BADGE_VARIANT[transaction.status]}>
@@ -466,8 +478,15 @@ export default function TransactionsPage() {
               <div className="flex flex-col gap-2">
                 <Label htmlFor="amount">Valor</Label>
                 <Input id="amount" type="number" step="0.01" {...register("amount")} />
-                {errors.amount && (
+                {errors.amount ? (
                   <p className="text-sm text-destructive">{errors.amount.message}</p>
+                ) : (
+                  watchedType === "despesa" && (
+                    <p className="text-xs text-muted-foreground">
+                      Estorno? Lance como despesa com valor negativo: ele abate a
+                      própria categoria do gasto, em vez de virar receita.
+                    </p>
+                  )
                 )}
               </div>
 

@@ -9,7 +9,7 @@ import {
 
 import { createClient } from "@/lib/supabase/server";
 import { signedAmountTotal } from "@/lib/finance";
-import { TRANSACTION_TYPE_SIGN } from "@/lib/labels";
+import { formatTransactionAmount, transactionAmountTone } from "@/lib/labels";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CashFlowChart, type CashFlowPoint } from "@/components/charts/cash-flow-chart";
 import {
@@ -17,7 +17,7 @@ import {
   type CategorySlice,
 } from "@/components/charts/category-breakdown-chart";
 import { MonthSelector } from "@/components/dashboard/month-selector";
-import type { TransactionType } from "@/types/database";
+import type { TransactionStatus, TransactionType } from "@/types/database";
 
 function formatCurrency(value: number) {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -41,6 +41,7 @@ interface RecentTransactionRow {
   amount: number;
   type: TransactionType;
   date: string;
+  status: TransactionStatus;
   categories: { name: string } | null;
 }
 
@@ -87,14 +88,20 @@ export default async function DashboardPage({
   ] = await Promise.all([
     supabase.from("accounts").select("balance"),
     supabase.from("transactions").select("amount, type").eq("status", "pago"),
+    // Este painel mostra caixa realizado: entradas, saidas, grafico e quebra por
+    // categoria contam apenas o que foi efetivamente pago/recebido. Sem esse filtro
+    // uma previsao "pendente" (ou um lancamento cancelado) entrava como receita do
+    // mes e inflava o resultado.
     supabase
       .from("transactions")
       .select("amount, type, date, category_id, categories(name,color)")
+      .eq("status", "pago")
       .gte("date", twelveMonthsAgo)
       .lte("date", monthEnd),
     supabase
       .from("transactions")
-      .select("id, description, amount, type, date, categories(name)")
+      .select("id, description, amount, type, date, status, categories(name)")
+      .neq("status", "cancelado")
       .order("date", { ascending: false })
       .limit(8),
   ]);
@@ -277,7 +284,11 @@ export default async function DashboardPage({
         });
       }
     });
+  // Uma fatia de pizza nao pode ser negativa. Se os estornos do mes superarem o
+  // gasto da categoria, o liquido fica <= 0 e a categoria sai do grafico em vez
+  // de virar uma fatia invertida.
   const categoryBreakdown = Array.from(categoryTotalsMap.values())
+    .filter((c) => c.value > 0)
     .sort((a, b) => b.value - a.value)
     .slice(0, 6);
 
@@ -390,19 +401,19 @@ export default async function DashboardPage({
                 <span className="text-xs text-muted-foreground">
                   {formatDate(t.date)}
                   {t.categories ? ` · ${t.categories.name}` : ""}
+                  {t.status === "pendente" ? " · pendente" : ""}
                 </span>
               </div>
               <span
                 className={
-                  t.type === "receita"
+                  transactionAmountTone(t) === "positive"
                     ? "text-sm font-medium tabular-nums text-success"
-                    : t.type === "despesa"
+                    : transactionAmountTone(t) === "negative"
                       ? "text-sm font-medium tabular-nums text-destructive"
                       : "text-sm font-medium tabular-nums text-muted-foreground"
                 }
               >
-                {TRANSACTION_TYPE_SIGN[t.type]}
-                {formatCurrency(t.amount)}
+                {formatTransactionAmount(t)}
               </span>
             </div>
           ))}

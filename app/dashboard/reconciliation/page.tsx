@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, CheckCircle2, FileUp } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -14,12 +15,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { accountsApi } from "@/hooks/use-accounts";
 import { transactionsApi } from "@/hooks/use-transactions";
 import {
   parseStatementFile,
   reconcile,
   StatementParseError,
-  type ReconciledEntry,
+  type BankEntry,
 } from "@/lib/reconciliation";
 
 function formatCurrency(value: number) {
@@ -32,19 +41,31 @@ function formatDate(value: string) {
 
 export default function ReconciliationPage() {
   const { data: transactions } = transactionsApi.useList();
-  const [entries, setEntries] = useState<ReconciledEntry[]>([]);
+  const { data: accounts } = accountsApi.useList();
+  const [bankEntries, setBankEntries] = useState<BankEntry[]>([]);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [accountId, setAccountId] = useState<string>("");
+
+  // Conferir contra todas as contas e o caminho que da falso positivo, entao ele
+  // nao e o padrao: a primeira conta corrente ja vem selecionada.
+  const defaultAccountId = useMemo(() => {
+    const list = accounts ?? [];
+    return (list.find((a) => a.type === "corrente") ?? list[0])?.id ?? "";
+  }, [accounts]);
+
+  useEffect(() => {
+    if (!accountId && defaultAccountId) setAccountId(defaultAccountId);
+  }, [accountId, defaultAccountId]);
 
   async function handleFile(file: File) {
     try {
       const text = await file.text();
-      const bankEntries = parseStatementFile(file.name, text);
-      const reconciled = reconcile(bankEntries, transactions ?? []);
-      setEntries(reconciled);
+      const parsed = parseStatementFile(file.name, text);
+      setBankEntries(parsed);
       setFileName(file.name);
-      toast.success(`${bankEntries.length} lançamento(s) importado(s) do extrato.`);
+      toast.success(`${parsed.length} lançamento(s) importado(s) do extrato.`);
     } catch (error) {
-      setEntries([]);
+      setBankEntries([]);
       setFileName(null);
       const message =
         error instanceof StatementParseError
@@ -53,6 +74,16 @@ export default function ReconciliationPage() {
       toast.error(message);
     }
   }
+
+  // O extrato e de uma conta so. Conferir contra os lancamentos de todas as contas
+  // da falso "conciliado" quando outro banco tem um valor igual na mesma data.
+  const entries = useMemo(
+    () =>
+      bankEntries.length > 0
+        ? reconcile(bankEntries, transactions ?? [], { accountId: accountId || undefined })
+        : [],
+    [bankEntries, transactions, accountId]
+  );
 
   const summary = useMemo(() => {
     const conciliados = entries.filter((e) => e.status === "conciliado").length;
@@ -84,6 +115,27 @@ export default function ReconciliationPage() {
               }}
             />
           </label>
+
+          <div className="flex flex-col gap-2 sm:max-w-xs">
+            <Label>Conta do extrato</Label>
+            <Select value={accountId} onValueChange={setAccountId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Todas as contas (não recomendado)" />
+              </SelectTrigger>
+              <SelectContent>
+                {(accounts ?? []).map((account) => (
+                  <SelectItem key={account.id} value={account.id}>
+                    {account.bank}
+                    {account.account ? ` · ${account.account}` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Escolha a conta a que este extrato pertence. Sem isso, um valor igual em
+              outro banco pode aparecer como conciliado por engano.
+            </p>
+          </div>
 
           <p className="text-xs text-muted-foreground">
             CSV esperado: data, descrição, valor (positivo para créditos, negativo para
