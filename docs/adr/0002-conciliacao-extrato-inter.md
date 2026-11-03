@@ -1,7 +1,7 @@
 # ADR-0002: Conciliação do extrato Inter e correção do saldo consolidado
 
 **Status:** Aceito
-**Data:** 2026-11-02 (atualizado com a posição real dos CDBs — item 8 — e com o tratamento de estornos — item 9)
+**Data:** 2026-11-02 (atualizado com a posição real dos CDBs — item 8 —, o tratamento de estornos — item 9 — e a confirmação do Pix de 27/08)
 **Decisores:** Felipe Pamplona (admin)
 
 ## Contexto
@@ -196,15 +196,22 @@ não existe como fatia; e o formulário aceita valor negativo apenas em despesa.
    não foi lançada como conta a pagar: o documento não traz o vencimento.
 2. **Estorno de R$ 110,00 de 16/03/2026 no Bradesco** não encontrou gasto
    correspondente na mesma conta e ficou sem categoria.
-3. **Pix recebido de R$ 4.393,54 em 27/08** está classificado como transferência
-   do Bradesco, mas o extrato descreve "Pix recebido - 64.341.655 Djalma Freitas
-   Cardoso", ou seja, CNPJ de terceiro. Não foi reclassificado por decisão
-   deliberada: mudar para receita infla o resultado de agosto com base em
-   inferência, e o saldo final é o mesmo das duas formas. Precisa do extrato do
-   Bradesco.
-4. **Possíveis duplicatas em mar–jul/2026** (sete pares idênticos de data, valor
+3. **Possíveis duplicatas em mar–jul/2026** (sete pares idênticos de data, valor
    e descrição, R$ 28,30 líquidos no Inter). Não foram removidas: corridas de
    aplicativo repetidas no mesmo dia são plausíveis, e sem extrato do período não
    há como distinguir. Removê-las *aumentaria* o saldo, então não explicam a
    divergência original.
-5. **Histórico anterior a 05/08/2026 não conferido** por falta de extratos.
+4. **Histórico anterior a 05/08/2026 não conferido** por falta de extratos.
+
+### Pendências resolvidas
+
+- **Pix de R$ 4.393,54 em 27/08 (migration 0011).** Ficou em aberto porque o
+  extrato descreve "Pix recebido - 64.341.655 Djalma Freitas Cardoso", nome de
+  terceiro, enquanto o lançamento era transferência entre contas próprias. Não
+  foi reclassificado na época por decisão deliberada: virar receita inflaria o
+  resultado de agosto com base em inferência, e o saldo é o mesmo das duas
+  formas. **O titular confirmou que foi transferência do Bradesco mesmo** — a
+  conta Bradesco é titulada por aquele CNPJ, então um Pix saindo dela chega ao
+  Inter com esse nome, e não com o da VX Capital. O mesmo titular aparece na
+  fatura paga em 13/08. A classificação já estava correta; só a descrição mudou,
+  para carregar a explicação e não virar dúvida na próxima conciliação.
