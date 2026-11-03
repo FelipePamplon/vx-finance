@@ -1,7 +1,7 @@
 # ADR-0002: Conciliação do extrato Inter e correção do saldo consolidado
 
 **Status:** Aceito
-**Data:** 2026-11-02 (atualizado no mesmo dia com a posição real dos CDBs — item 8)
+**Data:** 2026-11-02 (atualizado com a posição real dos CDBs — item 8 — e com o tratamento de estornos — item 9)
 **Decisores:** Felipe Pamplona (admin)
 
 ## Contexto
@@ -156,19 +156,55 @@ resgate. **Contrapartida:** no dia do resgate, lançar o valor bruto e estornar 
 provisão, para não contar o imposto duas vezes — está escrito na descrição dos
 dois lançamentos.
 
+### 9. Estorno é despesa negativa, não receita (migration 0010)
+
+35 estornos (R$ 3.500,00) estavam como `receita`. Um estorno não é receita — é
+despesa que voltou. Lançado como entrada, inflava as **duas** linhas do DRE ao
+mesmo tempo: Receita Bruta subia R$ 3.500,00 e as Despesas mantinham o gasto
+original cheio. O Resultado Líquido fechava certo **apenas porque os dois erros
+se cancelavam**, o que escondia o problema. A maioria estava sem categoria, então
+o DRE ainda ganhava uma linha de receita "Sem categoria".
+
+Estorno passa a ser `despesa` com `amount` **negativo**, na categoria do gasto
+que reverte. A categoria passa a mostrar o custo líquido:
+
+| Categoria | Bruto | Estornado | Líquido |
+|---|---|---|---|
+| Fornecedores | 28.164,47 | 2.050,00 | 26.114,47 |
+| Transporte | 7.094,14 | 553,00 | 6.541,14 |
+| Hospedagem | 3.436,56 | 488,00 | 2.948,56 |
+| Ajuda de Custo / Diárias | 10.169,18 | 299,00 | 9.870,18 |
+
+A matemática de `lib/finance.ts` já trata valor negativo sem caso especial
+(despesa de −13,50 entra no caixa como +13,50), então **nenhum saldo mudou** e a
+conciliação do extrato segue 43/43.
+
+**Alternativa considerada:** cancelar o par (gasto + estorno). Rejeitada: as duas
+linhas existem no extrato e precisam continuar conciliando.
+
+A categoria foi herdada do gasto original, pareado por mesmo valor, mesma conta e
+data até 45 dias antes — pareou 34 dos 35.
+
+Efeitos colaterais tratados: o prefixo de sinal era fixo por tipo e escrevia
+"- -R$ 13,50", então virou `formatTransactionAmount`, que tira o sinal do valor e
+não do tipo; o gráfico de pizza passa a descartar categoria com líquido ≤ 0, que
+não existe como fatia; e o formulário aceita valor negativo apenas em despesa.
+
 ### Pendências conhecidas
 
 1. **Fatura do cartão de R$ 296,94 em aberto** (limite utilizado do CDB Crédito)
    não foi lançada como conta a pagar: o documento não traz o vencimento.
-2. **Pix recebido de R$ 4.393,54 em 27/08** está classificado como transferência
+2. **Estorno de R$ 110,00 de 16/03/2026 no Bradesco** não encontrou gasto
+   correspondente na mesma conta e ficou sem categoria.
+3. **Pix recebido de R$ 4.393,54 em 27/08** está classificado como transferência
    do Bradesco, mas o extrato descreve "Pix recebido - 64.341.655 Djalma Freitas
    Cardoso", ou seja, CNPJ de terceiro. Não foi reclassificado por decisão
    deliberada: mudar para receita infla o resultado de agosto com base em
    inferência, e o saldo final é o mesmo das duas formas. Precisa do extrato do
    Bradesco.
-3. **Possíveis duplicatas em mar–jul/2026** (sete pares idênticos de data, valor
+4. **Possíveis duplicatas em mar–jul/2026** (sete pares idênticos de data, valor
    e descrição, R$ 28,30 líquidos no Inter). Não foram removidas: corridas de
    aplicativo repetidas no mesmo dia são plausíveis, e sem extrato do período não
    há como distinguir. Removê-las *aumentaria* o saldo, então não explicam a
    divergência original.
-4. **Histórico anterior a 05/08/2026 não conferido** por falta de extratos.
+5. **Histórico anterior a 05/08/2026 não conferido** por falta de extratos.

@@ -21,7 +21,8 @@ import {
   TRANSACTION_STATUS_BADGE_VARIANT as STATUS_BADGE_VARIANT,
   TRANSACTION_STATUS_LABELS as STATUS_LABELS,
   TRANSACTION_TYPE_LABELS as TYPE_LABELS,
-  TRANSACTION_TYPE_SIGN as TYPE_SIGN,
+  formatTransactionAmount,
+  transactionAmountTone,
 } from "@/lib/labels";
 import { DreView } from "@/components/reports/dre-view";
 import type { TransactionType, TransactionWithRelations } from "@/types/database";
@@ -321,15 +322,14 @@ export default function ReportsPage() {
                   </TableCell>
                   <TableCell
                     className={
-                      t.type === "receita"
+                      transactionAmountTone(t) === "positive"
                         ? "tabular-nums text-success"
-                        : t.type === "despesa"
+                        : transactionAmountTone(t) === "negative"
                           ? "tabular-nums text-destructive"
                           : "tabular-nums text-muted-foreground"
                     }
                   >
-                    {TYPE_SIGN[t.type]}
-                    {formatCurrency(t.amount)}
+                    {formatTransactionAmount(t)}
                   </TableCell>
                   <TableCell>
                     <Badge variant={STATUS_BADGE_VARIANT[t.status]}>

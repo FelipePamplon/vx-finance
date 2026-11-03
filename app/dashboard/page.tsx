@@ -9,7 +9,7 @@ import {
 
 import { createClient } from "@/lib/supabase/server";
 import { signedAmountTotal } from "@/lib/finance";
-import { TRANSACTION_TYPE_SIGN } from "@/lib/labels";
+import { formatTransactionAmount, transactionAmountTone } from "@/lib/labels";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CashFlowChart, type CashFlowPoint } from "@/components/charts/cash-flow-chart";
 import {
@@ -284,7 +284,11 @@ export default async function DashboardPage({
         });
       }
     });
+  // Uma fatia de pizza nao pode ser negativa. Se os estornos do mes superarem o
+  // gasto da categoria, o liquido fica <= 0 e a categoria sai do grafico em vez
+  // de virar uma fatia invertida.
   const categoryBreakdown = Array.from(categoryTotalsMap.values())
+    .filter((c) => c.value > 0)
     .sort((a, b) => b.value - a.value)
     .slice(0, 6);
 
@@ -402,15 +406,14 @@ export default async function DashboardPage({
               </div>
               <span
                 className={
-                  t.type === "receita"
+                  transactionAmountTone(t) === "positive"
                     ? "text-sm font-medium tabular-nums text-success"
-                    : t.type === "despesa"
+                    : transactionAmountTone(t) === "negative"
                       ? "text-sm font-medium tabular-nums text-destructive"
                       : "text-sm font-medium tabular-nums text-muted-foreground"
                 }
               >
-                {TRANSACTION_TYPE_SIGN[t.type]}
-                {formatCurrency(t.amount)}
+                {formatTransactionAmount(t)}
               </span>
             </div>
           ))}
