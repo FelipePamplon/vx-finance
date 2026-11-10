@@ -1,6 +1,6 @@
 # ADR-0003: Auditoria do sistema e reconstrução da camada de gestão
 
-**Status:** Aceito — migration 0017 pendente de aplicação
+**Status:** Aceito — migration 0017 aplicada em 10/11/2026
 **Data:** 2026-11-10
 **Decisores:** Felipe Pamplona (admin)
 
@@ -140,19 +140,21 @@ Extrato por conta. Suíte `npm test` com 51 verificações do motor (datas, DRE,
 sócios, projetos, projeção, saúde, fiscal, filtros, conciliação), sem
 dependência nova.
 
+Depois de aplicada a migration 0017: saldos inalterados, os quatro extratos do
+ADR-0002 seguem conciliando (307, 43, 84 e 24 lançamentos, pela data de
+pagamento), e o gatilho recusou em teste uma categoria de receita num lançamento
+de despesa. Sem categoria caiu de 41 para 37 lançamentos.
+
 **Não verificado:** as telas não foram exercitadas num navegador autenticado —
 a verificação foi por typecheck, build de produção e suíte do motor.
 
 ### Pendências
 
-1. **Aplicar a migration 0017** (colunas, gatilhos, auditoria, visão e limpeza
-   de dados). Sem ela o sistema funciona pela reserva, mas faltam: conta
-   ativa/encerrada, valor de contrato, recorrência, histórico e as travas.
-2. **Conta Inter negativa:** conciliar novembro (o resgate de 04/11).
-3. **Participação de cada sócio** (hoje 0%): sem ela a conta corrente de sócios
+1. **Conta Inter negativa:** conciliar novembro (o resgate de 04/11).
+2. **Participação de cada sócio** (hoje 0%): sem ela a conta corrente de sócios
    não calcula o direito de cada um.
-4. **Vincular lançamentos a projetos** e classificar os sem categoria — as
+3. **Vincular lançamentos a projetos** e classificar os sem categoria — as
    ferramentas (filtro + edição em massa) estão prontas; a decisão de qual
    projeto é do financeiro.
-5. **Limite do MEI:** confirmar com a contabilidade.
-6. Bradesco de 26/04 a 09/07 segue sem extrato (ADR-0002).
+4. **Limite do MEI:** confirmar com a contabilidade.
+5. Bradesco de 26/04 a 09/07 segue sem extrato (ADR-0002).
