@@ -30,6 +30,8 @@ export interface Account {
   account: string | null;
   type: AccountType;
   balance: number;
+  /** Conta encerrada continua no historico, mas sai das listas de lancamento. */
+  is_active: boolean;
   created_by: string | null;
   created_at: string;
 }
@@ -50,7 +52,10 @@ export interface Project {
   id: string;
   name: string;
   client_id: string | null;
+  /** Custo orcado do projeto. */
   budget: number;
+  /** Valor do contrato (receita prevista). */
+  contract_value: number;
   status: ProjectStatus;
   created_by: string | null;
   created_at: string;
@@ -86,8 +91,14 @@ export interface Transaction {
   partner_id: string | null;
   status: TransactionStatus;
   attachment_url: string | null;
+  /** Parcelas e recorrencias geradas juntas compartilham o grupo. */
+  recurrence_group: string | null;
+  installment_no: number | null;
+  installment_total: number | null;
   created_by: string | null;
   created_at: string;
+  updated_at: string | null;
+  updated_by: string | null;
 }
 
 export interface TransactionWithRelations extends Transaction {
@@ -97,6 +108,32 @@ export interface TransactionWithRelations extends Transaction {
   categories: { name: string; color: string; dre_section: DreSection } | null;
   clients: { company: string } | null;
   projects: { name: string } | null;
+  partners: { name: string } | null;
+}
+
+/** Saldo por conta calculado no banco (visao v_account_balances). */
+export interface AccountBalance {
+  id: string;
+  bank: string;
+  agency: string | null;
+  account: string | null;
+  type: AccountType;
+  is_active: boolean;
+  opening_balance: number;
+  movement: number;
+  current_balance: number;
+  last_movement: string | null;
+}
+
+export interface AuditEntry {
+  id: number;
+  table_name: string;
+  record_id: string | null;
+  action: "INSERT" | "UPDATE" | "DELETE";
+  changed_by: string | null;
+  changed_at: string;
+  old_data: Record<string, unknown> | null;
+  new_data: Record<string, unknown> | null;
 }
 
 export interface Service {

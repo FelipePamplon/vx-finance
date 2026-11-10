@@ -145,42 +145,76 @@ export function rbt12(
 
 export interface PosicaoMes {
   mes: string;
+  /**
+   * "simples": apurado pelo Anexo III. "mei": mes anterior a entrada no Simples,
+   * em que o imposto e o DAS-MEI de valor fixo e nao depende do faturamento.
+   */
+  regime: "simples" | "mei";
   /** Receita operacional do mes (base do Simples). */
   faturamento: number;
   rbt12: number;
   faixa: number;
   aliquota: number;
-  /** DAS estimado sobre o faturamento do mes. */
+  /** DAS estimado sobre o faturamento do mes (zero no periodo MEI). */
   devido: number;
-  /** DAS efetivamente lancado para essa competencia (pago ou a pagar). */
+  /** DAS lancado para essa competencia (pago ou a pagar). */
   lancado: number;
-  /** Positivo = falta provisionar. */
+  /** Positivo = falta provisionar. Sempre zero no periodo MEI. */
   diferenca: number;
+}
+
+export interface OpcoesFiscais {
+  /** "YYYY-MM" de abertura: liga a RBT12 proporcionalizada do primeiro ano. */
+  inicioAtividade?: string;
+  /**
+   * Primeira competencia apurada no Simples (PGDAS-D). Antes dela a empresa era
+   * MEI: o imposto era fixo e a receita daqueles meses nao entra na RBT12, que
+   * e como o PGDAS-D de 09/2026 foi declarado (receitas anteriores zeradas).
+   */
+  apuracaoDesde?: string;
 }
 
 /**
  * Posicao fiscal mes a mes: quanto o Simples deveria custar sobre o
  * faturamento e quanto ja foi lancado. A diferenca e o que falta provisionar.
+ *
+ * `dasLancadoPorCompetencia` precisa estar indexado pela COMPETENCIA do
+ * imposto, nao pela data do pagamento: o DAS de setembro e pago em outubro.
  */
 export function posicaoFiscal(
   faturamento: FaturamentoPorMes,
   dasLancadoPorCompetencia: FaturamentoPorMes,
-  inicioAtividade?: string
+  opcoes: OpcoesFiscais = {}
 ): PosicaoMes[] {
+  const { inicioAtividade, apuracaoDesde } = opcoes;
+  const noSimples = (mes: string) => !apuracaoDesde || mes >= apuracaoDesde;
+
+  // Base da RBT12: so a receita apurada no Simples.
+  const base: FaturamentoPorMes = {};
+  Object.entries(faturamento).forEach(([mes, v]) => {
+    if (noSimples(mes)) base[mes] = v;
+  });
+
   const meses = Array.from(
     new Set([...Object.keys(faturamento), ...Object.keys(dasLancadoPorCompetencia)])
   ).sort();
 
   return meses.map((mes) => {
-    const base = faturamento[mes] ?? 0;
-    const acumulado = rbt12(mes, faturamento, inicioAtividade);
-    const { efetiva, faixa } = aliquotaEfetiva(acumulado);
-    const { total: devido } = detalharDas(base, efetiva);
+    const fat = faturamento[mes] ?? 0;
     const lancado = round2(dasLancadoPorCompetencia[mes] ?? 0);
+
+    if (!noSimples(mes)) {
+      return { mes, regime: "mei", faturamento: fat, rbt12: 0, faixa: 0, aliquota: 0, devido: 0, lancado, diferenca: 0 };
+    }
+
+    const acumulado = rbt12(mes, base, inicioAtividade);
+    const { efetiva, faixa } = aliquotaEfetiva(acumulado);
+    const { total: devido } = detalharDas(fat, efetiva);
 
     return {
       mes,
-      faturamento: base,
+      regime: "simples",
+      faturamento: fat,
       rbt12: acumulado,
       faixa,
       aliquota: efetiva,
@@ -189,6 +223,19 @@ export function posicaoFiscal(
       diferenca: round2(devido - lancado),
     };
   });
+}
+
+/**
+ * Quanto de Simples ainda nao foi lancado, no ACUMULADO ate `ateMes`.
+ * O acumulado nao depende de em que mes cada pagamento foi registrado: mesmo
+ * que um DAS esteja lancado na data do pagamento (mes seguinte), devido e
+ * lancado se encontram na soma. E o numero certo para alerta.
+ */
+export function dasEmAberto(linhas: PosicaoMes[], ateMes: string): number {
+  const simples = linhas.filter((l) => l.regime === "simples");
+  const devido = simples.filter((l) => l.mes <= ateMes).reduce((s, l) => s + l.devido, 0);
+  const lancado = simples.reduce((s, l) => s + l.lancado, 0);
+  return Math.max(0, round2(devido - lancado));
 }
 
 function round2(v: number): number {

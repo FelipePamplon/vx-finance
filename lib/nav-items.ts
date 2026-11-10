@@ -13,6 +13,7 @@ import {
   Wrench,
   UserCog,
   Settings,
+  ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
 
@@ -30,7 +31,10 @@ export interface NavGroup {
 export const navGroups: NavGroup[] = [
   {
     label: "Visão geral",
-    items: [{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard }],
+    items: [
+      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/dashboard/health", label: "Saúde dos dados", icon: ShieldCheck },
+    ],
   },
   {
     label: "Financeiro",

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, ArrowDownCircle, ArrowUpCircle, CalendarClock, Check } from "lucide-react";
+import { AlertTriangle, ArrowDownCircle, ArrowUpCircle, CalendarClock, Check, Pencil, Plus } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,26 +15,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { TransactionDialog } from "@/components/transactions/transaction-dialog";
+import { useAccountBalances } from "@/hooks/use-account-balances";
 import { transactionsApi } from "@/hooks/use-transactions";
+import { cashPosition, cashProjection } from "@/lib/analytics";
+import { addDays, formatDate, todayISO } from "@/lib/dates";
+import { formatCurrency } from "@/lib/format";
 import type { TransactionWithRelations } from "@/types/database";
-
-function formatCurrency(value: number) {
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-function formatDate(value: string) {
-  return new Date(`${value}T00:00:00`).toLocaleDateString("pt-BR");
-}
-
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function addDays(iso: string, days: number) {
-  const d = new Date(`${iso}T00:00:00`);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
 
 type BucketKey = "vencidas" | "hoje" | "sete" | "trinta" | "depois";
 
@@ -65,6 +52,9 @@ export default function PayablesPage() {
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const [view, setView] = useState<"pagar" | "receber">("pagar");
   const [payingId, setPayingId] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<TransactionWithRelations | null>(null);
+  const { data: balances } = useAccountBalances();
 
   const today = todayISO();
 
@@ -84,6 +74,13 @@ export default function PayablesPage() {
   const vencidasCount = open.filter((t) => dueOf(t) < today).length;
 
   const rows = view === "pagar" ? aPagar : aReceber;
+
+  // O que importa nao e so o total a pagar: e se o dinheiro em conta cobre.
+  const caixa = useMemo(() => cashPosition(balances ?? []), [balances]);
+  const projecao = useMemo(
+    () => cashProjection(caixa.disponivel, transactions ?? [], today, 3650),
+    [caixa.disponivel, transactions, today]
+  );
 
   const grouped = useMemo(() => {
     const map = new Map<BucketKey, TransactionWithRelations[]>();
@@ -130,22 +127,45 @@ export default function PayablesPage() {
       iconBg: "bg-success/10",
     },
     {
-      label: "Saldo previsto",
-      value: totalReceber - totalPagar,
+      label: "Em conta após os compromissos",
+      value: projecao.saldoFinal,
       icon: CalendarClock,
-      accent: totalReceber - totalPagar >= 0 ? "text-success" : "text-destructive",
-      iconBg: totalReceber - totalPagar >= 0 ? "bg-success/10" : "bg-destructive/10",
+      accent: projecao.saldoFinal >= 0 ? "text-success" : "text-destructive",
+      iconBg: projecao.saldoFinal >= 0 ? "bg-success/10" : "bg-destructive/10",
     },
   ];
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-foreground">Contas a Pagar / Receber</h1>
-        <p className="text-sm text-muted-foreground">
-          Tudo que está em aberto, organizado por vencimento
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold text-foreground">Contas a Pagar / Receber</h1>
+          <p className="text-sm text-muted-foreground">
+            Tudo que está em aberto, organizado por vencimento
+          </p>
+        </div>
+        <Button
+          onClick={() => {
+            setEditing(null);
+            setDialogOpen(true);
+          }}
+        >
+          <Plus className="size-4" />
+          Novo compromisso
+        </Button>
       </div>
+
+      {projecao.primeiroNegativo && (
+        <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-foreground">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
+          <span>
+            O dinheiro em conta ({formatCurrency(caixa.disponivel)}) não cobre os compromissos:
+            fica negativo em <strong>{formatDate(projecao.primeiroNegativo)}</strong>. Resgate pelo
+            menos <strong>{formatCurrency(projecao.resgateNecessario)}</strong> da reserva (
+            {formatCurrency(caixa.aplicado)} aplicados) e lance a transferência.
+          </span>
+        </div>
+      )}
 
       {vencidasCount > 0 && (
         <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
@@ -271,16 +291,30 @@ export default function PayablesPage() {
                       {formatCurrency(Number(t.amount))}
                     </TableCell>
                     <TableCell>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        isLoading={payingId === t.id}
-                        onClick={() => handleMarkPaid(t)}
-                      >
-                        <Check className="size-4" />
-                        {view === "pagar" ? "Marcar como pago" : "Marcar recebido"}
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          isLoading={payingId === t.id}
+                          onClick={() => handleMarkPaid(t)}
+                        >
+                          <Check className="size-4" />
+                          {view === "pagar" ? "Pago" : "Recebido"}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          aria-label="Editar"
+                          onClick={() => {
+                            setEditing(t);
+                            setDialogOpen(true);
+                          }}
+                        >
+                          <Pencil className="size-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -289,6 +323,12 @@ export default function PayablesPage() {
           </div>
         );
       })}
+      <TransactionDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        editing={editing}
+        prefill={{ status: "pendente", type: view === "pagar" ? "despesa" : "receita" }}
+      />
       {ConfirmDialog}
     </div>
   );

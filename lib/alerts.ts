@@ -1,4 +1,7 @@
-import { signedAmountForAccount } from "@/lib/finance";
+import { computeBalances } from "@/lib/balances";
+import { addDays, formatDate, todayISO } from "@/lib/dates";
+import { fetchAllRows } from "@/lib/supabase/fetch-all";
+import { formatCurrency } from "@/lib/format";
 
 export interface Alert {
   id: string;
@@ -7,58 +10,55 @@ export interface Alert {
   message: string;
 }
 
-function formatCurrency(value: number) {
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-function formatDate(value: string) {
-  return new Date(`${value}T00:00:00`).toLocaleDateString("pt-BR");
-}
-
-function addDays(iso: string, days: number) {
-  const d = new Date(`${iso}T00:00:00`);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
+/**
+ * Alertas do sino. Leve de proposito (roda em toda pagina): saldo vem da visao
+ * v_account_balances, calculada no banco, em vez de baixar todos os lancamentos
+ * pagos - consulta que parava em 1.000 linhas sem avisar.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function getAlerts(supabase: any): Promise<Alert[]> {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISO();
   const inSevenDays = addDays(today, 7);
 
-  const [{ data: accounts }, { data: paidTransactions }, { data: openItems }] =
-    await Promise.all([
-      supabase.from("accounts").select("id, bank, balance"),
-      supabase
-        .from("transactions")
-        .select("account_id, transfer_account_id, amount, type")
-        .eq("status", "pago"),
-      // Vencimento e o campo certo aqui: "date" e a competencia do lancamento,
-      // usa-la como vencimento marcava como atrasado o que ainda estava no prazo.
-      supabase
-        .from("transactions")
-        .select("id, description, due_date, type, amount")
-        .eq("status", "pendente")
-        .not("due_date", "is", null)
-        .lte("due_date", inSevenDays)
-        .order("due_date", { ascending: true }),
+  const [balancesRes, { data: openItems }] = await Promise.all([
+    supabase.from("v_account_balances").select("id, bank, current_balance"),
+    // Vencimento e o campo certo aqui: "date" e a competencia do lancamento.
+    supabase
+      .from("transactions")
+      .select("id, description, due_date, type, amount")
+      .eq("status", "pendente")
+      .not("due_date", "is", null)
+      .lte("due_date", inSevenDays)
+      .order("due_date", { ascending: true }),
+  ]);
+
+  let balances: { id: string; bank: string; current_balance: number }[] = balancesRes.data ?? [];
+  if (balancesRes.error) {
+    // Visao ausente (migration 0017 ainda nao aplicada): mesma conta, paginada.
+    const [{ data: accounts }, movimentos] = await Promise.all([
+      supabase.from("accounts").select("*"),
+      fetchAllRows<Parameters<typeof computeBalances>[1][number]>((from, to) =>
+        supabase
+          .from("transactions")
+          .select("type, amount, status, date, account_id, transfer_account_id")
+          .eq("status", "pago")
+          .order("id", { ascending: true })
+          .range(from, to)
+      ),
     ]);
+    balances = computeBalances(accounts ?? [], movimentos);
+  }
 
   const alerts: Alert[] = [];
 
-  (accounts ?? []).forEach((account: { id: string; bank: string; balance: number }) => {
-    const net = (paidTransactions ?? []).reduce(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (sum: number, t: any) => sum + signedAmountForAccount(t, account.id),
-      0
-    );
-    const currentBalance = Number(account.balance) + net;
-    if (currentBalance < 0) {
+  balances.forEach((a) => {
+    const saldo = Number(a.current_balance);
+    if (saldo < -0.005) {
       alerts.push({
-        id: `saldo-${account.id}`,
+        id: `saldo-${a.id}`,
         type: "saldo_negativo",
         severity: "destructive",
-        message: `Conta "${account.bank}" está com saldo negativo (${formatCurrency(currentBalance)}).`,
+        message: `Conta "${a.bank}" está com saldo negativo (${formatCurrency(saldo)}). Falta lançar a entrada que cobriu o pagamento?`,
       });
     }
   });

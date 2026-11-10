@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -32,6 +32,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { partnersApi } from "@/hooks/use-partners";
+import { transactionsApi } from "@/hooks/use-transactions";
+import { partnerAccounts } from "@/lib/analytics";
+import { formatCurrency } from "@/lib/format";
 import type { Partner } from "@/types/database";
 
 const partnerSchema = z.object({
@@ -50,6 +53,20 @@ const defaultValues: PartnerFormValues = {
 
 export default function PartnersPage() {
   const { data: partners, isLoading } = partnersApi.useList();
+  const { data: transactions } = transactionsApi.useList();
+
+  // Conta corrente acumulada (desde o inicio): o que cabe a cada um contra o
+  // que ja retirou. Mesmo calculo do relatorio de Socios.
+  const resumo = useMemo(
+    () =>
+      partnerAccounts(
+        (transactions ?? []).filter((t) => t.status === "pago"),
+        partners ?? []
+      ),
+    [transactions, partners]
+  );
+  const contaDe = (id: string) => resumo.contas.find((c) => c.id === id);
+  const participacaoOk = Math.abs(resumo.somaParticipacao - 100) < 0.01;
   const createPartner = partnersApi.useCreate();
   const updatePartner = partnersApi.useUpdate();
   const deletePartner = partnersApi.useDelete();
@@ -110,7 +127,7 @@ export default function PartnersPage() {
         <div>
           <h1 className="text-2xl font-semibold text-foreground">Sócios</h1>
           <p className="text-sm text-muted-foreground">
-            Participação societária da VX Capital
+            Participação societária e conta corrente de cada sócio
           </p>
         </div>
         <Button onClick={openCreate}>
@@ -119,19 +136,46 @@ export default function PartnersPage() {
         </Button>
       </div>
 
+      {!isLoading && (partners?.length ?? 0) > 0 && !participacaoOk && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-foreground">
+          A participação cadastrada soma{" "}
+          <strong>{resumo.somaParticipacao.toLocaleString("pt-BR")}%</strong>, não 100%. Edite cada
+          sócio e informe o percentual do contrato social — sem isso o sistema não calcula o que
+          cabe a cada um.
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {[
+          { label: "Lucro acumulado antes da distribuição", value: resumo.lucroDistribuivel },
+          { label: "Já distribuído", value: resumo.totalRetirado },
+          { label: "Lucro retido na empresa", value: resumo.lucroDistribuivel - resumo.totalRetirado },
+        ].map((c) => (
+          <div key={c.label} className="rounded-lg border border-border bg-card px-4 py-3">
+            <p className="text-xs text-muted-foreground">{c.label}</p>
+            <p className={`text-lg font-semibold tabular-nums ${c.value < 0 ? "text-destructive" : ""}`}>
+              {formatCurrency(c.value)}
+            </p>
+          </div>
+        ))}
+      </div>
+
       <Table>
         <TableHeader>
           <TableRow>
             <TableHead>Sócio</TableHead>
             <TableHead>E-mail</TableHead>
-            <TableHead>Participação</TableHead>
+            <TableHead className="text-right">Participação</TableHead>
+            <TableHead className="text-right">Direito no lucro</TableHead>
+            <TableHead className="text-right">Retirado</TableHead>
+            <TableHead className="text-right">Saldo a retirar</TableHead>
             <TableHead className="w-16" />
           </TableRow>
         </TableHeader>
         <TableBody>
           {isLoading && (
             <TableRow>
-              <TableCell colSpan={4} className="text-center text-muted-foreground">
+              <TableCell colSpan={7} className="text-center text-muted-foreground">
                 Carregando...
               </TableCell>
             </TableRow>
@@ -139,7 +183,7 @@ export default function PartnersPage() {
 
           {!isLoading && partners?.length === 0 && (
             <TableRow>
-              <TableCell colSpan={4} className="text-center text-muted-foreground">
+              <TableCell colSpan={7} className="text-center text-muted-foreground">
                 Nenhum sócio cadastrado.
               </TableCell>
             </TableRow>
@@ -158,7 +202,24 @@ export default function PartnersPage() {
               <TableCell className="text-muted-foreground">
                 {partner.email || "-"}
               </TableCell>
-              <TableCell>{partner.share}%</TableCell>
+              <TableCell className="text-right tabular-nums">{partner.share}%</TableCell>
+              <TableCell className="text-right tabular-nums">
+                {participacaoOk ? formatCurrency(contaDe(partner.id)?.direito ?? 0) : "—"}
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
+                {formatCurrency(contaDe(partner.id)?.retirado ?? 0)}
+              </TableCell>
+              <TableCell
+                className={`text-right font-medium tabular-nums ${
+                  !participacaoOk
+                    ? "text-muted-foreground"
+                    : (contaDe(partner.id)?.saldo ?? 0) >= 0
+                      ? "text-success"
+                      : "text-destructive"
+                }`}
+              >
+                {participacaoOk ? formatCurrency(contaDe(partner.id)?.saldo ?? 0) : "—"}
+              </TableCell>
               <TableCell>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
