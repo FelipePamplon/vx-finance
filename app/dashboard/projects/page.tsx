@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -41,6 +41,9 @@ import {
 } from "@/components/ui/table";
 import { projectsApi } from "@/hooks/use-projects";
 import { clientsApi } from "@/hooks/use-clients";
+import { transactionsApi } from "@/hooks/use-transactions";
+import { projectResults } from "@/lib/analytics";
+import { formatCurrency, formatPercent } from "@/lib/format";
 import type { Project, ProjectStatus } from "@/types/database";
 
 const STATUS_LABELS: Record<ProjectStatus, string> = {
@@ -64,6 +67,7 @@ const projectSchema = z.object({
   name: z.string().min(2, "Nome muito curto"),
   client_id: z.string().min(1, "Selecione um cliente"),
   budget: z.coerce.number().min(0),
+  contract_value: z.coerce.number().min(0),
   status: z.enum(["ativo", "pausado", "concluido", "cancelado"]),
 });
 
@@ -73,16 +77,21 @@ const defaultValues: ProjectFormValues = {
   name: "",
   client_id: "",
   budget: 0,
+  contract_value: 0,
   status: "ativo",
 };
-
-function formatCurrency(value: number) {
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
 
 export default function ProjectsPage() {
   const { data: projects, isLoading } = projectsApi.useList();
   const { data: clients } = clientsApi.useList();
+  const { data: transactions } = transactionsApi.useList();
+
+  // Realizado por projeto: mesma conta do relatorio de margem.
+  const realizado = useMemo(() => {
+    const ativos = (transactions ?? []).filter((t) => t.status !== "cancelado");
+    return new Map(projectResults(ativos, projects ?? []).map((r) => [r.id, r]));
+  }, [transactions, projects]);
+
   const createProject = projectsApi.useCreate();
   const updateProject = projectsApi.useUpdate();
   const deleteProject = projectsApi.useDelete();
@@ -115,6 +124,7 @@ export default function ProjectsPage() {
       name: project.name,
       client_id: project.client_id ?? "",
       budget: project.budget,
+      contract_value: project.contract_value ?? 0,
       status: project.status,
     });
     setOpen(true);
@@ -149,7 +159,7 @@ export default function ProjectsPage() {
         <div>
           <h1 className="text-2xl font-semibold text-foreground">Projetos</h1>
           <p className="text-sm text-muted-foreground">
-            Acompanhe orçamento e status por projeto
+            Contrato, custo orçado e margem realizada por projeto
           </p>
         </div>
         <Button onClick={openCreate} disabled={!clients?.length}>
@@ -169,7 +179,10 @@ export default function ProjectsPage() {
           <TableRow>
             <TableHead>Projeto</TableHead>
             <TableHead>Cliente</TableHead>
-            <TableHead>Orçamento</TableHead>
+            <TableHead className="text-right">Contrato</TableHead>
+            <TableHead className="text-right">Faturado</TableHead>
+            <TableHead className="text-right">Custo / orçado</TableHead>
+            <TableHead className="text-right">Margem</TableHead>
             <TableHead>Status</TableHead>
             <TableHead className="w-16" />
           </TableRow>
@@ -177,7 +190,7 @@ export default function ProjectsPage() {
         <TableBody>
           {isLoading && (
             <TableRow>
-              <TableCell colSpan={5} className="text-center text-muted-foreground">
+              <TableCell colSpan={8} className="text-center text-muted-foreground">
                 Carregando...
               </TableCell>
             </TableRow>
@@ -185,7 +198,7 @@ export default function ProjectsPage() {
 
           {!isLoading && projects?.length === 0 && (
             <TableRow>
-              <TableCell colSpan={5} className="text-center text-muted-foreground">
+              <TableCell colSpan={8} className="text-center text-muted-foreground">
                 Nenhum projeto cadastrado.
               </TableCell>
             </TableRow>
@@ -204,7 +217,35 @@ export default function ProjectsPage() {
               <TableCell className="text-muted-foreground">
                 {project.clients?.company ?? "-"}
               </TableCell>
-              <TableCell>{formatCurrency(project.budget)}</TableCell>
+              <TableCell className="text-right tabular-nums">
+                {formatCurrency(project.contract_value ?? 0)}
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
+                {formatCurrency(realizado.get(project.id)?.receita ?? 0)}
+              </TableCell>
+              <TableCell
+                className={`text-right tabular-nums ${
+                  (realizado.get(project.id)?.budgetUsedPct ?? 0) > 100 ? "text-destructive" : ""
+                }`}
+              >
+                {formatCurrency(realizado.get(project.id)?.custo ?? 0)}
+                <span className="text-xs text-muted-foreground">
+                  {" "}
+                  / {formatCurrency(project.budget)}
+                </span>
+              </TableCell>
+              <TableCell
+                className={`text-right font-medium tabular-nums ${
+                  (realizado.get(project.id)?.margem ?? 0) >= 0 ? "text-success" : "text-destructive"
+                }`}
+              >
+                {formatCurrency(realizado.get(project.id)?.margem ?? 0)}
+                {realizado.get(project.id)?.margemPct != null && (
+                  <span className="block text-xs font-normal text-muted-foreground">
+                    {formatPercent(realizado.get(project.id)!.margemPct!)}
+                  </span>
+                )}
+              </TableCell>
               <TableCell>
                 <Badge variant={STATUS_BADGE_VARIANT[project.status]}>
                   {STATUS_LABELS[project.status]}
@@ -274,9 +315,19 @@ export default function ProjectsPage() {
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div className="flex flex-col gap-2">
-                <Label htmlFor="budget">Orçamento</Label>
+                <Label htmlFor="contract_value">Valor do contrato</Label>
+                <Input
+                  id="contract_value"
+                  type="number"
+                  step="0.01"
+                  {...register("contract_value")}
+                />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="budget">Custo orçado</Label>
                 <Input id="budget" type="number" step="0.01" {...register("budget")} />
               </div>
 

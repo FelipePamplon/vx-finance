@@ -24,27 +24,71 @@ import {
 } from "@/components/ui/select";
 import { accountsApi } from "@/hooks/use-accounts";
 import { transactionsApi } from "@/hooks/use-transactions";
+import { TransactionDialog, type TransactionFormValues } from "@/components/transactions/transaction-dialog";
+import { Button } from "@/components/ui/button";
+import { addMonths, formatDate, monthEnd, monthKey } from "@/lib/dates";
+import { categoriesApi } from "@/hooks/use-categories";
+import { formatCurrency } from "@/lib/format";
 import {
   parseStatementFile,
   reconcile,
   StatementParseError,
+  suggestEntry,
   type BankEntry,
 } from "@/lib/reconciliation";
-
-function formatCurrency(value: number) {
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-function formatDate(value: string) {
-  return new Date(`${value}T00:00:00`).toLocaleDateString("pt-BR");
-}
 
 export default function ReconciliationPage() {
   const { data: transactions } = transactionsApi.useList();
   const { data: accounts } = accountsApi.useList();
+  const { data: categories } = categoriesApi.useList();
   const [bankEntries, setBankEntries] = useState<BankEntry[]>([]);
   const [fileName, setFileName] = useState<string | null>(null);
   const [accountId, setAccountId] = useState<string>("");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [prefill, setPrefill] = useState<Partial<TransactionFormValues>>({});
+
+  // Linha do extrato que nao esta no sistema vira lancamento em um clique, ja
+  // com a categoria sugerida pelo historico. Antes a tela so apontava a falta e
+  // o lancamento tinha que ser redigitado em outra tela - e ficava para depois.
+  function lancar(entry: BankEntry) {
+    const sugestao = suggestEntry(entry, transactions ?? []);
+    const valor = Math.abs(entry.amount);
+    const base: Partial<TransactionFormValues> = {
+      description: entry.description,
+      amount: valor,
+      date: entry.date,
+      due_date: entry.date,
+      paid_date: entry.date,
+      status: "pago",
+    };
+
+    if (sugestao.transfer === "aplicacao") {
+      setPrefill({ ...base, type: "transferencia", account_id: accountId, transfer_account_id: "" });
+    } else if (sugestao.transfer === "resgate") {
+      // Resgate: o dinheiro SAI da aplicacao e entra na conta do extrato.
+      setPrefill({ ...base, type: "transferencia", account_id: "", transfer_account_id: accountId });
+    } else {
+      // Imposto sobre faturamento pago no mes M refere-se a M-1: a competencia
+      // vai para o ultimo dia do mes anterior e a data do extrato fica como
+      // pagamento. Lancado tudo na data do pagamento, a posicao fiscal mostrava
+      // um mes sem imposto e o seguinte com imposto em dobro.
+      const categoria = categories?.find((c) => c.id === sugestao.category_id);
+      const competencia =
+        categoria?.dre_section === "imposto"
+          ? monthEnd(addMonths(monthKey(entry.date), -1))
+          : entry.date;
+      setPrefill({
+        ...base,
+        date: competencia,
+        type: sugestao.type,
+        account_id: accountId,
+        category_id: sugestao.category_id ?? "",
+        client_id: sugestao.client_id ?? "",
+        project_id: sugestao.project_id ?? "",
+      });
+    }
+    setDialogOpen(true);
+  }
 
   // Conferir contra todas as contas e o caminho que da falso positivo, entao ele
   // nao e o padrao: a primeira conta corrente ja vem selecionada.
@@ -178,6 +222,7 @@ export default function ReconciliationPage() {
                 <TableHead>Descrição (extrato)</TableHead>
                 <TableHead>Valor</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead className="w-28" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -199,12 +244,32 @@ export default function ReconciliationPage() {
                       <Badge variant="destructive">Não encontrado</Badge>
                     )}
                   </TableCell>
+                  <TableCell>
+                    {entry.status === "nao_encontrado" && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        disabled={!accountId}
+                        onClick={() => lancar(entry)}
+                      >
+                        Lançar
+                      </Button>
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </>
       )}
+
+      <TransactionDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        editing={null}
+        prefill={prefill}
+      />
     </div>
   );
 }

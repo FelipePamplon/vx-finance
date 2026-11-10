@@ -1,12 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Download, FileSpreadsheet, FileText } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -16,7 +15,27 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DreMonthlyView, dreMonthlyExport } from "@/components/reports/dre-monthly-view";
+import { DreView, dreExport } from "@/components/reports/dre-view";
+import {
+  ClientsView,
+  PartnersView,
+  ProjectsView,
+  clientsExport,
+  partnersExport,
+  projectsExport,
+} from "@/components/reports/management-views";
+import { StatementView, statementExport } from "@/components/reports/statement-view";
+import { TaxView, taxExport } from "@/components/reports/tax-view";
+import { LedgerFilters } from "@/components/transactions/ledger-filters";
+import { useAccountBalances } from "@/hooks/use-account-balances";
+import { partnersApi } from "@/hooks/use-partners";
+import { projectsApi } from "@/hooks/use-projects";
 import { transactionsApi } from "@/hooks/use-transactions";
+import { formatDate, todayISO, yearStart } from "@/lib/dates";
+import { exportCsv, exportExcel, exportPdf, type ExportTable } from "@/lib/export";
+import { signedAmountTotal } from "@/lib/finance";
+import { formatCurrency, round2 } from "@/lib/format";
 import {
   TRANSACTION_STATUS_BADGE_VARIANT as STATUS_BADGE_VARIANT,
   TRANSACTION_STATUS_LABELS as STATUS_LABELS,
@@ -24,277 +43,217 @@ import {
   formatTransactionAmount,
   transactionAmountTone,
 } from "@/lib/labels";
-import { DreView } from "@/components/reports/dre-view";
-import { TaxView } from "@/components/reports/tax-view";
-import type { TransactionType, TransactionWithRelations } from "@/types/database";
+import {
+  applyLedgerFilters,
+  EMPTY_FILTERS,
+  filtersFromParams,
+  type LedgerFilterState,
+} from "@/lib/ledger-filters";
+import type { TransactionWithRelations } from "@/types/database";
 
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+const VIEWS = [
+  { key: "fluxo", label: "Fluxo de Caixa" },
+  { key: "dre", label: "DRE" },
+  { key: "mensal", label: "DRE mensal" },
+  { key: "fiscal", label: "Posição Fiscal" },
+  { key: "projetos", label: "Projetos" },
+  { key: "clientes", label: "Clientes" },
+  { key: "socios", label: "Sócios" },
+  { key: "extrato", label: "Extrato" },
+] as const;
+
+type ViewKey = (typeof VIEWS)[number]["key"];
+
+function fluxoExport(rows: TransactionWithRelations[], periodo: string): ExportTable {
+  return {
+    title: "Fluxo de Caixa",
+    subtitle: periodo,
+    head: ["Data", "Descrição", "Categoria", "Conta", "Cliente", "Projeto", "Tipo", "Valor", "Status"],
+    body: rows.map((t) => [
+      formatDate(t.date),
+      t.description,
+      t.type === "transferencia" ? "Transferência" : (t.categories?.name ?? "Sem categoria"),
+      t.accounts?.bank ?? "-",
+      t.clients?.company ?? "-",
+      t.projects?.name ?? "-",
+      TYPE_LABELS[t.type],
+      // Com sinal: saida negativa, entrada positiva, transferencia pelo valor.
+      t.type === "transferencia" ? Number(t.amount) : signedAmountTotal(t),
+      STATUS_LABELS[t.status],
+    ]),
+  };
 }
 
-function yearStartISO() {
-  const now = new Date();
-  return new Date(now.getFullYear(), 0, 1).toISOString().slice(0, 10);
-}
+function ReportsInner() {
+  const searchParams = useSearchParams();
+  const { data: transactions, isLoading } = transactionsApi.useList();
+  const { data: projects } = projectsApi.useList();
+  const { data: partners } = partnersApi.useList();
+  const { data: balances } = useAccountBalances();
 
-function formatCurrency(value: number) {
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-function formatDate(value: string) {
-  return new Date(`${value}T00:00:00`).toLocaleDateString("pt-BR");
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-}
-
-function rowsToTable(rows: TransactionWithRelations[]) {
-  return rows.map((t) => [
-    formatDate(t.date),
-    t.description,
-    t.categories?.name ?? "-",
-    t.accounts?.bank ?? "-",
-    TYPE_LABELS[t.type],
-    formatCurrency(t.amount),
-    STATUS_LABELS[t.status],
-  ]);
-}
-
-async function exportCsv(rows: TransactionWithRelations[]) {
-  const header = ["Data", "Descrição", "Categoria", "Conta", "Tipo", "Valor", "Status"];
-  const lines = rowsToTable(rows);
-  const csvContent = [header, ...lines]
-    .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(";"))
-    .join("\n");
-  const blob = new Blob([`﻿${csvContent}`], { type: "text/csv;charset=utf-8;" });
-  downloadBlob(blob, `fluxo-de-caixa-${todayISO()}.csv`);
-}
-
-async function exportExcel(rows: TransactionWithRelations[]) {
-  const XLSX = await import("xlsx");
-  const data = rows.map((t) => ({
-    Data: formatDate(t.date),
-    Descricao: t.description,
-    Categoria: t.categories?.name ?? "-",
-    Conta: t.accounts?.bank ?? "-",
-    Tipo: TYPE_LABELS[t.type],
-    Valor: t.amount,
-    Status: STATUS_LABELS[t.status],
-  }));
-  const worksheet = XLSX.utils.json_to_sheet(data);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Fluxo de Caixa");
-  XLSX.writeFile(workbook, `fluxo-de-caixa-${todayISO()}.xlsx`);
-}
-
-async function exportPdf(
-  rows: TransactionWithRelations[],
-  summary: { entradas: number; saidas: number; resultado: number }
-) {
-  const { default: jsPDF } = await import("jspdf");
-  const { default: autoTable } = await import("jspdf-autotable");
-
-  const doc = new jsPDF();
-  doc.setFontSize(16);
-  doc.text("VX Capital — Fluxo de Caixa", 14, 18);
-  doc.setFontSize(10);
-  doc.setTextColor(100);
-  doc.text(
-    `Entradas: ${formatCurrency(summary.entradas)}   Saidas: ${formatCurrency(summary.saidas)}   Resultado: ${formatCurrency(summary.resultado)}`,
-    14,
-    26
+  // Padrao dos relatorios: ano corrente, sem cancelados. Cancelado e dinheiro
+  // que nao se moveu - so aparece se o usuario pedir pelo filtro de status.
+  const defaults = useMemo<LedgerFilterState>(
+    () => ({ ...EMPTY_FILTERS, from: yearStart(), to: todayISO(), status: "ativos" }),
+    []
   );
 
-  autoTable(doc, {
-    startY: 32,
-    head: [["Data", "Descrição", "Categoria", "Conta", "Tipo", "Valor", "Status"]],
-    body: rowsToTable(rows),
-    styles: { fontSize: 8 },
-    headStyles: { fillColor: [21, 27, 35] },
-  });
+  const [filters, setFilters] = useState<LedgerFilterState>(() =>
+    filtersFromParams(searchParams, defaults)
+  );
+  const viewParam = searchParams.get("view") as ViewKey | null;
+  const [view, setView] = useState<ViewKey>(
+    VIEWS.some((v) => v.key === viewParam) ? (viewParam as ViewKey) : "fluxo"
+  );
+  const [statementAccount, setStatementAccount] = useState("");
 
-  doc.save(`fluxo-de-caixa-${todayISO()}.pdf`);
-}
+  // Extrato: comeca na conta filtrada ou na primeira conta corrente ativa.
+  useEffect(() => {
+    if (statementAccount || !balances?.length) return;
+    const inicial =
+      balances.find((a) => a.id === filters.conta) ??
+      balances.find((a) => a.is_active && a.type === "corrente") ??
+      balances[0];
+    setStatementAccount(inicial.id);
+  }, [balances, filters.conta, statementAccount]);
 
-export default function ReportsPage() {
-  const { data: transactions, isLoading } = transactionsApi.useList();
+  const filtered = useMemo(
+    () => applyLedgerFilters(transactions ?? [], filters),
+    [transactions, filters]
+  );
 
-  const [dateFrom, setDateFrom] = useState(yearStartISO());
-  const [dateTo, setDateTo] = useState(todayISO());
-  const [typeFilter, setTypeFilter] = useState<"todos" | TransactionType>("todos");
-  const [view, setView] = useState<"fluxo" | "dre" | "fiscal">("fluxo");
-
-  const filteredRows = useMemo(() => {
-    return (transactions ?? []).filter((t) => {
-      // Lancamento cancelado e dinheiro que nao se moveu: fora do fluxo, do DRE
-      // e das exportacoes. Sem isso, uma previsao cancelada continuava somando
-      // receita no resultado do periodo.
-      if (t.status === "cancelado") return false;
-      if (t.date < dateFrom || t.date > dateTo) return false;
-      if (typeFilter !== "todos" && t.type !== typeFilter) return false;
-      return true;
-    });
-  }, [transactions, dateFrom, dateTo, typeFilter]);
-
-  // A posicao fiscal confronta faturamento com DAS lancado, entao precisa dos
-  // dois lados: o filtro de tipo distorceria a apuracao. So o periodo vale aqui.
-  const fiscalRows = useMemo(() => {
-    return (transactions ?? []).filter(
-      (t) => t.status !== "cancelado" && t.date >= dateFrom && t.date <= dateTo
-    );
-  }, [transactions, dateFrom, dateTo]);
+  // A posicao fiscal usa o historico INTEIRO: a aliquota do mes depende da
+  // receita dos 12 meses anteriores (RBT12), que um recorte de periodo cortaria.
+  const fiscalRows = useMemo(
+    () => (transactions ?? []).filter((t) => t.status !== "cancelado"),
+    [transactions]
+  );
 
   const summary = useMemo(() => {
-    const entradas = filteredRows
-      .filter((t) => t.type === "receita")
-      .reduce((sum, t) => sum + Number(t.amount), 0);
-    const saidas = filteredRows
-      .filter((t) => t.type === "despesa")
-      .reduce((sum, t) => sum + Number(t.amount), 0);
-    return { entradas, saidas, resultado: entradas - saidas };
-  }, [filteredRows]);
+    const validos = filtered.filter((t) => t.status !== "cancelado");
+    const entradas = validos
+      .filter((t) => signedAmountTotal(t) > 0)
+      .reduce((s, t) => s + signedAmountTotal(t), 0);
+    const saidas = validos
+      .filter((t) => signedAmountTotal(t) < 0)
+      .reduce((s, t) => s - signedAmountTotal(t), 0);
+    return { entradas: round2(entradas), saidas: round2(saidas), resultado: round2(entradas - saidas) };
+  }, [filtered]);
+
+  const periodo =
+    filters.from || filters.to
+      ? `Período: ${filters.from ? formatDate(filters.from) : "início"} a ${
+          filters.to ? formatDate(filters.to) : "hoje"
+        }`
+      : "Todo o período";
+
+  function tabela(): ExportTable {
+    switch (view) {
+      case "dre":
+        return dreExport(filtered, periodo);
+      case "mensal":
+        return dreMonthlyExport(filtered, filters.from, filters.to, periodo);
+      case "fiscal":
+        return taxExport(fiscalRows, periodo);
+      case "projetos":
+        return projectsExport(filtered, projects ?? [], periodo);
+      case "clientes":
+        return clientsExport(filtered, periodo);
+      case "socios":
+        return partnersExport(filtered, partners ?? [], periodo);
+      case "extrato":
+        return statementExport(
+          transactions ?? [],
+          balances ?? [],
+          statementAccount,
+          filters.from,
+          filters.to,
+          periodo
+        );
+      default:
+        return fluxoExport(filtered, periodo);
+    }
+  }
+
+  const semDados = isLoading || (transactions ?? []).length === 0;
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-foreground">Relatórios</h1>
           <p className="text-sm text-muted-foreground">
-            Fluxo de caixa filtrável e exportável
+            Resultado, impostos, projetos, clientes e sócios — tudo exportável
           </p>
         </div>
         <div className="flex gap-2">
-          <Button
-            variant="secondary"
-            onClick={() => exportCsv(filteredRows)}
-            disabled={filteredRows.length === 0}
-          >
+          <Button variant="secondary" onClick={() => exportCsv(tabela())} disabled={semDados}>
             <Download className="size-4" />
             CSV
           </Button>
-          <Button
-            variant="secondary"
-            onClick={() => exportExcel(filteredRows)}
-            disabled={filteredRows.length === 0}
-          >
+          <Button variant="secondary" onClick={() => exportExcel(tabela())} disabled={semDados}>
             <FileSpreadsheet className="size-4" />
             Excel
           </Button>
-          <Button
-            variant="secondary"
-            onClick={() => exportPdf(filteredRows, summary)}
-            disabled={filteredRows.length === 0}
-          >
+          <Button variant="secondary" onClick={() => exportPdf(tabela())} disabled={semDados}>
             <FileText className="size-4" />
             PDF
           </Button>
         </div>
       </div>
 
-      <div className="flex gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant={view === "fluxo" ? "default" : "outline"}
-          onClick={() => setView("fluxo")}
-        >
-          Fluxo de Caixa
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant={view === "dre" ? "default" : "outline"}
-          onClick={() => setView("dre")}
-        >
-          DRE
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant={view === "fiscal" ? "default" : "outline"}
-          onClick={() => setView("fiscal")}
-        >
-          Posição Fiscal
-        </Button>
+      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+        {VIEWS.map((v) => (
+          <Button
+            key={v.key}
+            type="button"
+            size="sm"
+            className="shrink-0"
+            variant={view === v.key ? "default" : "outline"}
+            onClick={() => setView(v.key)}
+          >
+            {v.label}
+          </Button>
+        ))}
       </div>
 
-      <div className="flex flex-wrap items-end gap-4">
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="dateFrom">De</Label>
-          <Input
-            id="dateFrom"
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-          />
-        </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="dateTo">Até</Label>
-          <Input
-            id="dateTo"
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-          />
-        </div>
-        <div className="flex gap-2">
-          {(["todos", "receita", "despesa"] as const).map((option) => (
-            <Button
-              key={option}
-              type="button"
-              size="sm"
-              variant={typeFilter === option ? "default" : "outline"}
-              onClick={() => setTypeFilter(option)}
-            >
-              {option === "todos" ? "Todos" : option === "receita" ? "Receitas" : "Despesas"}
-            </Button>
-          ))}
-        </div>
-      </div>
+      <LedgerFilters
+        value={filters}
+        onChange={setFilters}
+        defaults={defaults}
+        // Extrato usa so o periodo; a posicao fiscal olha o historico inteiro.
+        hide={
+          view === "extrato"
+            ? ["q", "tipo", "status", "conta", "categoria", "cliente", "projeto", "socio", "secao", "min", "max"]
+            : view === "fiscal"
+              ? ["q", "from", "to", "tipo", "status", "conta", "categoria", "cliente", "projeto", "socio", "secao", "min", "max"]
+              : []
+        }
+      />
 
       {view === "fluxo" && (
         <>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle>Entradas</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-xl font-semibold text-success">
-                  {formatCurrency(summary.entradas)}
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle>Saídas</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-xl font-semibold text-destructive">
-                  {formatCurrency(summary.saidas)}
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle>Resultado</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p
-                  className={`text-xl font-semibold ${summary.resultado >= 0 ? "text-success" : "text-destructive"}`}
-                >
-                  {formatCurrency(summary.resultado)}
-                </p>
-              </CardContent>
-            </Card>
+            {[
+              { label: "Entradas", value: summary.entradas, cls: "text-success" },
+              { label: "Saídas", value: summary.saidas, cls: "text-destructive" },
+              {
+                label: "Resultado de caixa",
+                value: summary.resultado,
+                cls: summary.resultado >= 0 ? "text-success" : "text-destructive",
+              },
+            ].map((c) => (
+              <Card key={c.label}>
+                <CardHeader className="pb-2">
+                  <CardTitle>{c.label}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className={`text-xl font-semibold tabular-nums ${c.cls}`}>
+                    {formatCurrency(c.value)}
+                  </p>
+                </CardContent>
+              </Card>
+            ))}
           </div>
 
           <Table>
@@ -304,7 +263,7 @@ export default function ReportsPage() {
                 <TableHead>Descrição</TableHead>
                 <TableHead>Categoria</TableHead>
                 <TableHead>Conta</TableHead>
-                <TableHead>Valor</TableHead>
+                <TableHead className="text-right">Valor</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
@@ -316,55 +275,83 @@ export default function ReportsPage() {
                   </TableCell>
                 </TableRow>
               )}
-
-              {!isLoading && filteredRows.length === 0 && (
+              {!isLoading && filtered.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center text-muted-foreground">
-                    Nenhum lançamento no período selecionado.
+                    Nenhum lançamento no filtro selecionado.
                   </TableCell>
                 </TableRow>
               )}
-
-              {filteredRows.map((t) => (
-                <TableRow key={t.id}>
-                  <TableCell className="text-muted-foreground">
-                    {formatDate(t.date)}
-                  </TableCell>
-                  <TableCell>{t.description}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {t.categories?.name ?? "-"}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {t.accounts?.bank ?? "-"}
-                  </TableCell>
-                  <TableCell
-                    className={
-                      transactionAmountTone(t) === "positive"
-                        ? "tabular-nums text-success"
-                        : transactionAmountTone(t) === "negative"
-                          ? "tabular-nums text-destructive"
-                          : "tabular-nums text-muted-foreground"
-                    }
-                  >
-                    {formatTransactionAmount(t)}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={STATUS_BADGE_VARIANT[t.status]}>
-                      {STATUS_LABELS[t.status]}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {filtered.slice(0, 300).map((t) => {
+                const k = transactionAmountTone(t);
+                return (
+                  <TableRow key={t.id}>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {formatDate(t.date)}
+                    </TableCell>
+                    <TableCell className="min-w-[220px]">{t.description}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {t.type === "transferencia"
+                        ? "Transferência"
+                        : (t.categories?.name ?? "Sem categoria")}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {t.accounts?.bank ?? "-"}
+                    </TableCell>
+                    <TableCell
+                      className={`whitespace-nowrap text-right tabular-nums ${
+                        k === "positive"
+                          ? "text-success"
+                          : k === "negative"
+                            ? "text-destructive"
+                            : "text-muted-foreground"
+                      }`}
+                    >
+                      {formatTransactionAmount(t)}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={STATUS_BADGE_VARIANT[t.status]}>
+                        {STATUS_LABELS[t.status]}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
+          {filtered.length > 300 && (
+            <p className="text-xs text-muted-foreground">
+              Mostrando os 300 primeiros de {filtered.length}. A exportação traz todos.
+            </p>
+          )}
         </>
       )}
 
-      {view === "dre" && <DreView rows={filteredRows} />}
-
-      {view === "fiscal" && (
-        <TaxView rows={fiscalRows} inicioAtividade="2026-01" />
+      {view === "dre" && <DreView rows={filtered} />}
+      {view === "mensal" && <DreMonthlyView rows={filtered} from={filters.from} to={filters.to} />}
+      {view === "fiscal" && <TaxView rows={fiscalRows} />}
+      {view === "projetos" && <ProjectsView rows={filtered} projects={projects ?? []} />}
+      {view === "clientes" && <ClientsView rows={filtered} />}
+      {view === "socios" && <PartnersView rows={filtered} partners={partners ?? []} />}
+      {view === "extrato" && (
+        <StatementView
+          transactions={transactions ?? []}
+          balances={balances ?? []}
+          accountId={statementAccount}
+          onAccountChange={setStatementAccount}
+          from={filters.from}
+          to={filters.to}
+        />
       )}
     </div>
+  );
+}
+
+export default function ReportsPage() {
+  // useSearchParams exige um limite de Suspense.
+  return (
+    <Suspense fallback={<p className="text-sm text-muted-foreground">Carregando...</p>}>
+      <ReportsInner />
+    </Suspense>
   );
 }

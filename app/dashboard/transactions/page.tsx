@@ -1,30 +1,22 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeftRight,
+  ChevronLeft,
+  ChevronRight,
   MoreHorizontal,
   Paperclip,
   Pencil,
   Plus,
   Trash2,
 } from "lucide-react";
+import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -46,236 +38,187 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { transactionsApi } from "@/hooks/use-transactions";
+import { LedgerFilters } from "@/components/transactions/ledger-filters";
+import { TransactionDialog } from "@/components/transactions/transaction-dialog";
 import { accountsApi } from "@/hooks/use-accounts";
 import { categoriesApi } from "@/hooks/use-categories";
 import { clientsApi } from "@/hooks/use-clients";
 import { projectsApi } from "@/hooks/use-projects";
+import { transactionsApi } from "@/hooks/use-transactions";
+import { formatDate } from "@/lib/dates";
+import { signedAmountTotal } from "@/lib/finance";
+import { formatCurrency, round2 } from "@/lib/format";
 import {
   TRANSACTION_STATUS_BADGE_VARIANT as STATUS_BADGE_VARIANT,
   TRANSACTION_STATUS_LABELS as STATUS_LABELS,
   formatTransactionAmount,
   transactionAmountTone,
 } from "@/lib/labels";
-import { getAttachmentUrl, uploadAttachment } from "@/lib/storage";
-import type {
-  TransactionStatus,
-  TransactionType,
-  TransactionWithRelations,
-} from "@/types/database";
+import {
+  applyLedgerFilters,
+  EMPTY_FILTERS,
+  filtersFromParams,
+  type LedgerFilterState,
+} from "@/lib/ledger-filters";
+import { getAttachmentUrl } from "@/lib/storage";
+import { createClient } from "@/lib/supabase/client";
+import type { TransactionWithRelations } from "@/types/database";
 
-const transactionSchema = z
-  .object({
-    description: z.string().min(2, "Descrição muito curta"),
-    // Negativo e permitido em despesa para registrar estorno (despesa que voltou).
-    amount: z.coerce.number().refine((v) => v !== 0, "Valor não pode ser zero"),
-    type: z.enum(["receita", "despesa", "transferencia"]),
-    date: z.string().min(1, "Selecione uma data"),
-    due_date: z.string().optional(),
-    paid_date: z.string().optional(),
-    account_id: z.string().min(1, "Selecione uma conta"),
-    transfer_account_id: z.string().optional(),
-    category_id: z.string().optional(),
-    project_id: z.string().optional(),
-    client_id: z.string().optional(),
-    status: z.enum(["pendente", "pago", "cancelado"]),
-  })
-  // Transferencia nao tem categoria (nao e receita nem despesa), mas exige destino.
-  .superRefine((values, ctx) => {
-    // So despesa aceita valor negativo, e so para registrar estorno: o dinheiro
-    // volta abatendo a categoria que gerou o gasto, em vez de virar receita.
-    if (values.amount < 0 && values.type !== "despesa") {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["amount"],
-        message:
-          "Valor negativo só em despesa, para registrar estorno. Dinheiro que entra é receita.",
-      });
-    }
+const PAGE_SIZE = 50;
+const KEEP = "__keep__";
+const CLEAR = "__clear__";
 
-    if (values.type === "transferencia") {
-      if (!values.transfer_account_id) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["transfer_account_id"],
-          message: "Selecione a conta de destino",
-        });
-      } else if (values.transfer_account_id === values.account_id) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["transfer_account_id"],
-          message: "A conta de destino deve ser diferente da origem",
-        });
-      }
-    } else if (!values.category_id) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["category_id"],
-        message: "Selecione uma categoria",
-      });
-    }
-  });
-
-type TransactionFormValues = z.infer<typeof transactionSchema>;
-
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+function tone(t: TransactionWithRelations) {
+  const k = transactionAmountTone(t);
+  return k === "positive"
+    ? "text-success"
+    : k === "negative"
+      ? "text-destructive"
+      : "text-muted-foreground";
 }
 
-function defaultValues(): TransactionFormValues {
-  return {
-    description: "",
-    amount: 0,
-    type: "despesa",
-    date: todayISO(),
-    due_date: todayISO(),
-    paid_date: "",
-    account_id: "",
-    transfer_account_id: "",
-    category_id: "",
-    project_id: "",
-    client_id: "",
-    status: "pendente",
-  };
-}
+function TransactionsInner() {
+  const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
 
-function formatCurrency(value: number) {
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-function formatDate(value: string) {
-  return new Date(`${value}T00:00:00`).toLocaleDateString("pt-BR");
-}
-
-const NONE = "none";
-
-export default function TransactionsPage() {
   const { data: transactions, isLoading } = transactionsApi.useList();
   const { data: accounts } = accountsApi.useList();
   const { data: categories } = categoriesApi.useList();
   const { data: clients } = clientsApi.useList();
   const { data: projects } = projectsApi.useList();
-
-  const createTransaction = transactionsApi.useCreate();
-  const updateTransaction = transactionsApi.useUpdate();
   const deleteTransaction = transactionsApi.useDelete();
 
+  const [filters, setFilters] = useState<LedgerFilterState>(() =>
+    filtersFromParams(searchParams)
+  );
+  const [page, setPage] = useState(0);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<TransactionWithRelations | null>(null);
-  const [typeFilter, setTypeFilter] = useState<"todos" | TransactionType>("todos");
-  const [file, setFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
   const { confirm, ConfirmDialog } = useConfirmDialog();
 
-  const {
-    register,
-    handleSubmit,
-    reset,
-    watch,
-    setValue,
-    formState: { errors, isSubmitting },
-  } = useForm<TransactionFormValues>({
-    resolver: zodResolver(transactionSchema),
-    defaultValues: defaultValues(),
-  });
+  // Edicao em massa
+  const [bulkCategory, setBulkCategory] = useState(KEEP);
+  const [bulkProject, setBulkProject] = useState(KEEP);
+  const [bulkClient, setBulkClient] = useState(KEEP);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
-  const watchedType = watch("type");
-  const watchedAccountId = watch("account_id");
-  const watchedTransferAccountId = watch("transfer_account_id");
-  const watchedCategoryId = watch("category_id");
-  const isTransferForm = watchedType === "transferencia";
-  const watchedProjectId = watch("project_id");
-  const watchedClientId = watch("client_id");
-  const watchedStatus = watch("status");
-
-  const filteredCategories = useMemo(
-    () => categories?.filter((category) => category.type === watchedType) ?? [],
-    [categories, watchedType]
+  const filtered = useMemo(
+    () => applyLedgerFilters(transactions ?? [], filters),
+    [transactions, filters]
   );
 
-  const filteredTransactions = useMemo(() => {
-    if (typeFilter === "todos") return transactions ?? [];
-    return (transactions ?? []).filter((t) => t.type === typeFilter);
-  }, [transactions, typeFilter]);
+  useEffect(() => {
+    setPage(0);
+    setSelected(new Set());
+  }, [filters]);
+
+  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const current = Math.min(page, pages - 1);
+  const rows = filtered.slice(current * PAGE_SIZE, (current + 1) * PAGE_SIZE);
+
+  // Totais do recorte. Cancelado nao e dinheiro; transferencia e neutra.
+  const totals = useMemo(() => {
+    const validos = filtered.filter((t) => t.status !== "cancelado");
+    const entradas = validos
+      .filter((t) => signedAmountTotal(t) > 0)
+      .reduce((s, t) => s + signedAmountTotal(t), 0);
+    const saidas = validos
+      .filter((t) => signedAmountTotal(t) < 0)
+      .reduce((s, t) => s - signedAmountTotal(t), 0);
+    return { entradas: round2(entradas), saidas: round2(saidas), liquido: round2(entradas - saidas) };
+  }, [filtered]);
 
   const hasPrerequisites = !!accounts?.length && !!categories?.length;
+  const allOnPage = rows.length > 0 && rows.every((t) => selected.has(t.id));
 
-  function openCreate() {
-    setEditing(null);
-    setFile(null);
-    reset(defaultValues());
-    setOpen(true);
-  }
-
-  function openEdit(transaction: TransactionWithRelations) {
-    setEditing(transaction);
-    setFile(null);
-    reset({
-      description: transaction.description,
-      amount: transaction.amount,
-      type: transaction.type,
-      date: transaction.date,
-      due_date: transaction.due_date ?? "",
-      paid_date: transaction.paid_date ?? "",
-      account_id: transaction.account_id ?? "",
-      transfer_account_id: transaction.transfer_account_id ?? "",
-      category_id: transaction.category_id ?? "",
-      project_id: transaction.project_id ?? "",
-      client_id: transaction.client_id ?? "",
-      status: transaction.status,
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
     });
-    setOpen(true);
   }
 
-  async function onSubmit(values: TransactionFormValues) {
-    let attachmentUrl = editing?.attachment_url ?? null;
+  function togglePage() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      rows.forEach((t) => (allOnPage ? next.delete(t.id) : next.add(t.id)));
+      return next;
+    });
+  }
 
-    if (file) {
-      setUploading(true);
-      try {
-        attachmentUrl = await uploadAttachment(file);
-      } finally {
-        setUploading(false);
+  function selectAllFiltered() {
+    setSelected(new Set(filtered.map((t) => t.id)));
+  }
+
+  async function applyBulk() {
+    const alvo = filtered.filter((t) => selected.has(t.id));
+    if (alvo.length === 0) return;
+
+    const patch: Record<string, string | null> = {};
+    if (bulkProject !== KEEP) patch.project_id = bulkProject === CLEAR ? null : bulkProject;
+    if (bulkClient !== KEEP) patch.client_id = bulkClient === CLEAR ? null : bulkClient;
+
+    const categoria = categories?.find((c) => c.id === bulkCategory);
+    setBulkBusy(true);
+    try {
+      const supabase = createClient();
+      let alterados = 0;
+      let pulados = 0;
+
+      // Projeto e cliente valem para qualquer lancamento que nao seja transferencia.
+      if (Object.keys(patch).length > 0) {
+        const ids = alvo.filter((t) => t.type !== "transferencia").map((t) => t.id);
+        pulados += alvo.length - ids.length;
+        if (ids.length > 0) {
+          const { error } = await supabase.from("transactions").update(patch).in("id", ids);
+          if (error) throw error;
+          alterados = ids.length;
+        }
       }
+
+      // Categoria so entra em lancamento do mesmo tipo (o banco recusa o resto).
+      if (categoria) {
+        const ids = alvo.filter((t) => t.type === categoria.type).map((t) => t.id);
+        const fora = alvo.length - ids.length;
+        if (ids.length > 0) {
+          const { error } = await supabase
+            .from("transactions")
+            .update({ category_id: categoria.id })
+            .in("id", ids);
+          if (error) throw error;
+          alterados = Math.max(alterados, ids.length);
+        }
+        if (fora > 0) pulados = Math.max(pulados, fora);
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      toast.success(
+        `${alterados} lançamento(s) atualizado(s).` +
+          (pulados > 0 ? ` ${pulados} ignorado(s) por serem de outro tipo.` : "")
+      );
+      setSelected(new Set());
+      setBulkCategory(KEEP);
+      setBulkProject(KEEP);
+      setBulkClient(KEEP);
+    } catch (error) {
+      toast.error(`Erro na edição em massa: ${(error as Error).message}`);
+    } finally {
+      setBulkBusy(false);
     }
-
-    const isTransfer = values.type === "transferencia";
-
-    const payload = {
-      description: values.description,
-      amount: values.amount,
-      type: values.type,
-      date: values.date,
-      due_date: values.due_date || values.date,
-      // Se marcou como pago sem informar a data, assume a data de competencia.
-      paid_date:
-        values.status === "pago" ? values.paid_date || values.date : null,
-      account_id: values.account_id,
-      transfer_account_id: isTransfer ? values.transfer_account_id || null : null,
-      category_id: isTransfer ? null : values.category_id || null,
-      project_id: values.project_id || null,
-      client_id: values.client_id || null,
-      status: values.status,
-      attachment_url: attachmentUrl,
-    };
-
-    if (editing) {
-      await updateTransaction.mutateAsync({ id: editing.id, values: payload });
-    } else {
-      await createTransaction.mutateAsync(payload);
-    }
-    setOpen(false);
   }
 
-  async function handleDelete(transaction: TransactionWithRelations) {
+  async function handleDelete(t: TransactionWithRelations) {
     const ok = await confirm({
       title: "Excluir lançamento",
-      description: `Tem certeza que deseja excluir "${transaction.description}"? Essa ação não pode ser desfeita.`,
+      description: `Tem certeza que deseja excluir "${t.description}"? Se ele aconteceu de verdade mas foi lançado errado, prefira editar; se não vai acontecer, cancelar preserva o histórico.`,
       confirmLabel: "Excluir",
       variant: "destructive",
     });
     if (!ok) return;
-    await deleteTransaction.mutateAsync(transaction.id);
+    await deleteTransaction.mutateAsync(t.id);
   }
 
   async function handleViewAttachment(path: string) {
@@ -283,413 +226,308 @@ export default function TransactionsPage() {
     window.open(url, "_blank", "noopener,noreferrer");
   }
 
+  const bulkDirty = bulkCategory !== KEEP || bulkProject !== KEEP || bulkClient !== KEEP;
+
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-foreground">Fluxo de Caixa</h1>
           <p className="text-sm text-muted-foreground">
-            Lançamentos de receitas e despesas
+            Lançamentos de receitas, despesas e transferências
           </p>
         </div>
-        <Button onClick={openCreate} disabled={!hasPrerequisites}>
+        <Button
+          onClick={() => {
+            setEditing(null);
+            setOpen(true);
+          }}
+          disabled={!hasPrerequisites}
+        >
           <Plus className="size-4" />
           Novo lançamento
         </Button>
       </div>
 
-      {!hasPrerequisites && (
+      {!hasPrerequisites && !isLoading && (
         <p className="text-sm text-muted-foreground">
           Cadastre pelo menos uma conta bancária e uma categoria antes de lançar
           movimentações.
         </p>
       )}
 
-      <div className="flex items-center gap-2">
-        {(["todos", "receita", "despesa"] as const).map((option) => (
-          <Button
-            key={option}
-            type="button"
-            size="sm"
-            variant={typeFilter === option ? "default" : "outline"}
-            onClick={() => setTypeFilter(option)}
-          >
-            {option === "todos" ? "Todos" : option === "receita" ? "Receitas" : "Despesas"}
-          </Button>
+      <LedgerFilters value={filters} onChange={setFilters} defaults={EMPTY_FILTERS} />
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[
+          { label: "Lançamentos", value: String(filtered.length), cls: "text-foreground" },
+          { label: "Entradas", value: formatCurrency(totals.entradas), cls: "text-success" },
+          { label: "Saídas", value: formatCurrency(totals.saidas), cls: "text-destructive" },
+          {
+            label: "Líquido do filtro",
+            value: formatCurrency(totals.liquido),
+            cls: totals.liquido >= 0 ? "text-success" : "text-destructive",
+          },
+        ].map((c) => (
+          <div key={c.label} className="rounded-lg border border-border bg-card px-4 py-3">
+            <p className="text-xs text-muted-foreground">{c.label}</p>
+            <p className={`text-lg font-semibold tabular-nums ${c.cls}`}>{c.value}</p>
+          </div>
         ))}
       </div>
+
+      {selected.size > 0 && (
+        <div className="flex flex-col gap-3 rounded-lg border border-primary/40 bg-primary/5 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+            <span className="font-medium text-foreground">
+              {selected.size} selecionado(s)
+              {selected.size < filtered.length && (
+                <button
+                  type="button"
+                  className="ml-2 cursor-pointer text-primary underline-offset-2 hover:underline"
+                  onClick={selectAllFiltered}
+                >
+                  selecionar todos os {filtered.length} do filtro
+                </button>
+              )}
+            </span>
+            <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
+              Limpar seleção
+            </Button>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Select value={bulkCategory} onValueChange={setBulkCategory}>
+              <SelectTrigger aria-label="Categoria em massa">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={KEEP}>Categoria: manter</SelectItem>
+                {categories?.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name} · {c.type}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={bulkProject} onValueChange={setBulkProject}>
+              <SelectTrigger aria-label="Projeto em massa">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={KEEP}>Projeto: manter</SelectItem>
+                <SelectItem value={CLEAR}>Remover projeto</SelectItem>
+                {projects?.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={bulkClient} onValueChange={setBulkClient}>
+              <SelectTrigger aria-label="Cliente em massa">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={KEEP}>Cliente: manter</SelectItem>
+                <SelectItem value={CLEAR}>Remover cliente</SelectItem>
+                {clients?.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.company}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button onClick={applyBulk} disabled={!bulkDirty} isLoading={bulkBusy}>
+              Aplicar aos selecionados
+            </Button>
+          </div>
+        </div>
+      )}
 
       <Table>
         <TableHeader>
           <TableRow>
+            <TableHead className="w-10">
+              <input
+                type="checkbox"
+                className="size-4 cursor-pointer accent-primary"
+                checked={allOnPage}
+                onChange={togglePage}
+                aria-label="Selecionar página"
+              />
+            </TableHead>
             <TableHead>Data</TableHead>
             <TableHead>Descrição</TableHead>
             <TableHead>Categoria</TableHead>
             <TableHead>Conta</TableHead>
-            <TableHead>Valor</TableHead>
+            <TableHead className="text-right">Valor</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead className="w-16" />
+            <TableHead className="w-12" />
           </TableRow>
         </TableHeader>
         <TableBody>
           {isLoading && (
             <TableRow>
-              <TableCell colSpan={7} className="text-center text-muted-foreground">
+              <TableCell colSpan={8} className="text-center text-muted-foreground">
                 Carregando...
               </TableCell>
             </TableRow>
           )}
 
-          {!isLoading && filteredTransactions.length === 0 && (
+          {!isLoading && rows.length === 0 && (
             <TableRow>
-              <TableCell colSpan={7} className="text-center text-muted-foreground">
-                Nenhum lançamento encontrado.
+              <TableCell colSpan={8} className="text-center text-muted-foreground">
+                Nenhum lançamento encontrado para este filtro.
               </TableCell>
             </TableRow>
           )}
 
-          {filteredTransactions.map((transaction) => (
-            <TableRow key={transaction.id}>
-              <TableCell className="text-muted-foreground">
-                {formatDate(transaction.date)}
-              </TableCell>
-              <TableCell>
-                <div className="flex items-center gap-2">
-                  <span className="flex size-7 items-center justify-center rounded-md bg-accent text-muted-foreground">
-                    <ArrowLeftRight className="size-4" />
-                  </span>
-                  {transaction.description}
-                </div>
-              </TableCell>
-              <TableCell>
-                {transaction.type === "transferencia" ? (
-                  <Badge variant="outline">Transferência</Badge>
-                ) : transaction.categories ? (
-                  <Badge
-                    variant="secondary"
-                    style={{
-                      backgroundColor: `${transaction.categories.color}26`,
-                      color: transaction.categories.color,
-                      borderColor: "transparent",
-                    }}
-                  >
-                    {transaction.categories.name}
-                  </Badge>
-                ) : (
-                  "-"
-                )}
-              </TableCell>
-              <TableCell className="text-muted-foreground">
-                {transaction.accounts?.bank ?? "-"}
-                {transaction.type === "transferencia" &&
-                  transaction.transfer_accounts?.bank && (
-                    <span className="text-xs"> → {transaction.transfer_accounts.bank}</span>
-                  )}
-              </TableCell>
-              <TableCell
-                className={
-                  transactionAmountTone(transaction) === "positive"
-                    ? "tabular-nums text-success"
-                    : transactionAmountTone(transaction) === "negative"
-                      ? "tabular-nums text-destructive"
-                      : "tabular-nums text-muted-foreground"
-                }
-              >
-                {formatTransactionAmount(transaction)}
-              </TableCell>
-              <TableCell>
-                <Badge variant={STATUS_BADGE_VARIANT[transaction.status]}>
-                  {STATUS_LABELS[transaction.status]}
-                </Badge>
-              </TableCell>
-              <TableCell>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon">
-                      <MoreHorizontal className="size-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    {transaction.attachment_url && (
-                      <DropdownMenuItem
-                        onClick={() => handleViewAttachment(transaction.attachment_url!)}
-                      >
-                        <Paperclip className="size-4" />
-                        Ver comprovante
-                      </DropdownMenuItem>
+          {rows.map((t) => {
+            const vinculos = [
+              t.clients?.company,
+              t.projects?.name,
+              t.partners?.name,
+              t.installment_total ? `parcela ${t.installment_no}/${t.installment_total}` : null,
+            ].filter(Boolean);
+            return (
+              <TableRow key={t.id} className={t.status === "cancelado" ? "opacity-60" : undefined}>
+                <TableCell>
+                  <input
+                    type="checkbox"
+                    className="size-4 cursor-pointer accent-primary"
+                    checked={selected.has(t.id)}
+                    onChange={() => toggle(t.id)}
+                    aria-label={`Selecionar ${t.description}`}
+                  />
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-muted-foreground">
+                  {formatDate(t.date)}
+                </TableCell>
+                <TableCell className="min-w-[220px]">
+                  <div className="flex items-center gap-1.5">
+                    <span className={t.status === "cancelado" ? "line-through" : undefined}>
+                      {t.description}
+                    </span>
+                    {t.attachment_url && (
+                      <Paperclip className="size-3.5 shrink-0 text-muted-foreground" />
                     )}
-                    <DropdownMenuItem onClick={() => openEdit(transaction)}>
-                      <Pencil className="size-4" />
-                      Editar
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="text-destructive focus:text-destructive"
-                      onClick={() => handleDelete(transaction)}
+                  </div>
+                  {vinculos.length > 0 && (
+                    <p className="text-xs text-muted-foreground">{vinculos.join(" · ")}</p>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {t.type === "transferencia" ? (
+                    <Badge variant="outline">Transferência</Badge>
+                  ) : t.categories ? (
+                    <Badge
+                      variant="secondary"
+                      style={{
+                        backgroundColor: `${t.categories.color}26`,
+                        color: t.categories.color,
+                        borderColor: "transparent",
+                      }}
                     >
-                      <Trash2 className="size-4" />
-                      Excluir
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </TableCell>
-            </TableRow>
-          ))}
+                      {t.categories.name}
+                    </Badge>
+                  ) : (
+                    <Badge variant="destructive">Sem categoria</Badge>
+                  )}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-muted-foreground">
+                  {t.accounts?.bank ?? "-"}
+                  {t.type === "transferencia" && t.transfer_accounts?.bank && (
+                    <span className="text-xs"> → {t.transfer_accounts.bank}</span>
+                  )}
+                </TableCell>
+                <TableCell className={`whitespace-nowrap text-right tabular-nums ${tone(t)}`}>
+                  {formatTransactionAmount(t)}
+                </TableCell>
+                <TableCell>
+                  <Badge variant={STATUS_BADGE_VARIANT[t.status]}>{STATUS_LABELS[t.status]}</Badge>
+                </TableCell>
+                <TableCell>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" aria-label="Ações">
+                        <MoreHorizontal className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {t.attachment_url && (
+                        <DropdownMenuItem onClick={() => handleViewAttachment(t.attachment_url!)}>
+                          <Paperclip className="size-4" />
+                          Ver comprovante
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setEditing(t);
+                          setOpen(true);
+                        }}
+                      >
+                        <Pencil className="size-4" />
+                        Editar
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={() => handleDelete(t)}
+                      >
+                        <Trash2 className="size-4" />
+                        Excluir
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle>
-              {editing ? "Editar lançamento" : "Novo lançamento"}
-            </DialogTitle>
-          </DialogHeader>
+      {filtered.length > PAGE_SIZE && (
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <span>
+            {current * PAGE_SIZE + 1}–{Math.min((current + 1) * PAGE_SIZE, filtered.length)} de{" "}
+            {filtered.length}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(current - 1)}
+              disabled={current === 0}
+            >
+              <ChevronLeft className="size-4" />
+              Anterior
+            </Button>
+            <span>
+              {current + 1} / {pages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(current + 1)}
+              disabled={current >= pages - 1}
+            >
+              Próxima
+              <ChevronRight className="size-4" />
+            </Button>
+          </div>
+        </div>
+      )}
 
-          <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="description">Descrição</Label>
-              <Input id="description" {...register("description")} />
-              {errors.description && (
-                <p className="text-sm text-destructive">{errors.description.message}</p>
-              )}
-            </div>
-
-            <div className="grid grid-cols-3 gap-4">
-              <div className="flex flex-col gap-2">
-                <Label>Tipo</Label>
-                <Select
-                  value={watchedType}
-                  onValueChange={(value) => {
-                    setValue("type", value as TransactionType);
-                    setValue("category_id", "");
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="receita">Receita</SelectItem>
-                    <SelectItem value="despesa">Despesa</SelectItem>
-                    <SelectItem value="transferencia">Transferência</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="amount">Valor</Label>
-                <Input id="amount" type="number" step="0.01" {...register("amount")} />
-                {errors.amount ? (
-                  <p className="text-sm text-destructive">{errors.amount.message}</p>
-                ) : (
-                  watchedType === "despesa" && (
-                    <p className="text-xs text-muted-foreground">
-                      Estorno? Lance como despesa com valor negativo: ele abate a
-                      própria categoria do gasto, em vez de virar receita.
-                    </p>
-                  )
-                )}
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="date">Competência</Label>
-                <Input id="date" type="date" {...register("date")} />
-              </div>
-            </div>
-
-            {isTransferForm && (
-              <p className="rounded-md bg-accent/50 px-3 py-2 text-xs text-muted-foreground">
-                Transferência move dinheiro entre contas próprias: não entra no
-                resultado nem no DRE, apenas altera o saldo das duas contas.
-              </p>
-            )}
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-2">
-                <Label>{isTransferForm ? "Conta de origem" : "Conta"}</Label>
-                <Select
-                  value={watchedAccountId}
-                  onValueChange={(value) => setValue("account_id", value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione uma conta" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {accounts?.map((account) => (
-                      <SelectItem key={account.id} value={account.id}>
-                        {account.bank}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {errors.account_id && (
-                  <p className="text-sm text-destructive">{errors.account_id.message}</p>
-                )}
-              </div>
-
-              {isTransferForm ? (
-                <div className="flex flex-col gap-2">
-                  <Label>Conta de destino</Label>
-                  <Select
-                    value={watchedTransferAccountId}
-                    onValueChange={(value) => setValue("transfer_account_id", value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione a conta de destino" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {accounts
-                        ?.filter((account) => account.id !== watchedAccountId)
-                        .map((account) => (
-                          <SelectItem key={account.id} value={account.id}>
-                            {account.bank}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                  {errors.transfer_account_id && (
-                    <p className="text-sm text-destructive">
-                      {errors.transfer_account_id.message}
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  <Label>Categoria</Label>
-                  <Select
-                    value={watchedCategoryId}
-                    onValueChange={(value) => setValue("category_id", value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione uma categoria" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {filteredCategories.map((category) => (
-                        <SelectItem key={category.id} value={category.id}>
-                          {category.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {errors.category_id && (
-                    <p className="text-sm text-destructive">{errors.category_id.message}</p>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="due_date">Vencimento</Label>
-                <Input id="due_date" type="date" {...register("due_date")} />
-                <p className="text-xs text-muted-foreground">
-                  Usado em Contas a Pagar/Receber e nos alertas.
-                </p>
-              </div>
-
-              {watchedStatus === "pago" && (
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="paid_date">Data do pagamento</Label>
-                  <Input id="paid_date" type="date" {...register("paid_date")} />
-                  <p className="text-xs text-muted-foreground">
-                    Em branco assume a data de competência.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-2">
-                <Label>Cliente (opcional)</Label>
-                <Select
-                  value={watchedClientId || NONE}
-                  onValueChange={(value) =>
-                    setValue("client_id", value === NONE ? "" : value)
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Nenhum" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE}>Nenhum</SelectItem>
-                    {clients?.map((client) => (
-                      <SelectItem key={client.id} value={client.id}>
-                        {client.company}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <Label>Projeto (opcional)</Label>
-                <Select
-                  value={watchedProjectId || NONE}
-                  onValueChange={(value) =>
-                    setValue("project_id", value === NONE ? "" : value)
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Nenhum" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE}>Nenhum</SelectItem>
-                    {projects?.map((project) => (
-                      <SelectItem key={project.id} value={project.id}>
-                        {project.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <Label>Status</Label>
-              <Select
-                value={watchedStatus}
-                onValueChange={(value) => setValue("status", value as TransactionStatus)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(STATUS_LABELS).map(([value, label]) => (
-                    <SelectItem key={value} value={value}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="attachment">Comprovante (opcional)</Label>
-              <Input
-                id="attachment"
-                type="file"
-                accept=".pdf,.png,.jpg,.jpeg"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              />
-              {editing?.attachment_url && !file && (
-                <p className="text-xs text-muted-foreground">
-                  Já existe um comprovante anexado. Selecione outro arquivo para substituir.
-                </p>
-              )}
-            </div>
-
-            <DialogFooter>
-              <Button type="submit" isLoading={isSubmitting || uploading}>
-                {uploading
-                  ? "Enviando comprovante..."
-                  : editing
-                    ? "Salvar alterações"
-                    : "Criar lançamento"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <TransactionDialog open={open} onOpenChange={setOpen} editing={editing} />
       {ConfirmDialog}
     </div>
+  );
+}
+
+export default function TransactionsPage() {
+  // useSearchParams exige um limite de Suspense.
+  return (
+    <Suspense fallback={<p className="text-sm text-muted-foreground">Carregando...</p>}>
+      <TransactionsInner />
+    </Suspense>
   );
 }

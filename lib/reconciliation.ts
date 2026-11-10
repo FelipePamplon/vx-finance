@@ -266,3 +266,102 @@ export function reconcile(
     return { ...entry, status: "nao_encontrado" as const };
   });
 }
+
+// ---------------------------------------------------------------------------
+// Sugestao de lancamento para linha do extrato que nao esta no sistema
+// ---------------------------------------------------------------------------
+
+function limpar(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Tira o "tipo de operacao" do historico do banco e deixa o favorecido. */
+function favorecido(descricao: string): string {
+  return limpar(descricao)
+    .replace(
+      /^(pix (enviado|recebido)( devolvido)?|compra no debito|pagamento efetuado|pagamento de convenio|transferencia pix|pix qr code (dinamico|estatico)|recarga|ted (enviada|recebida)|estorno)\s*[-:]?\s*/,
+      ""
+    )
+    .replace(/\s+(sao paulo|belem)\s+bra$/, "")
+    .replace(/\d{2}\/\d{2}$/, "")
+    .trim();
+}
+
+export interface EntrySuggestion {
+  type: TransactionType;
+  /** Aplicacao/resgate: a outra ponta e uma conta de investimento. */
+  transfer: "aplicacao" | "resgate" | null;
+  category_id: string | null;
+  client_id: string | null;
+  project_id: string | null;
+  /** De quantos lancamentos anteriores a sugestao saiu. */
+  baseadoEm: number;
+}
+
+/**
+ * Sugere como lancar uma linha do extrato a partir do historico: o mesmo
+ * favorecido costuma cair na mesma categoria. Aplicacao e resgate de CDB sao
+ * reconhecidos como transferencia - lanca-los como despesa/receita foi um dos
+ * erros que inflaram o saldo (ADR-0002).
+ */
+export function suggestEntry(
+  entry: BankEntry,
+  history: {
+    description: string;
+    type: TransactionType;
+    status?: TransactionStatus;
+    category_id?: string | null;
+    client_id?: string | null;
+    project_id?: string | null;
+  }[]
+): EntrySuggestion {
+  const texto = limpar(entry.description);
+
+  if (/\b(aplicacao|resgate)\b/.test(texto) && /\b(cdb|lci|lca|poupanca|fundo|porq)/.test(texto)) {
+    return {
+      type: "transferencia",
+      transfer: entry.amount < 0 ? "aplicacao" : "resgate",
+      category_id: null,
+      client_id: null,
+      project_id: null,
+      baseadoEm: 0,
+    };
+  }
+
+  const type: TransactionType = entry.amount >= 0 ? "receita" : "despesa";
+  const quem = favorecido(entry.description);
+  const vazio = { type, transfer: null, category_id: null, client_id: null, project_id: null, baseadoEm: 0 };
+  if (quem.length < 4) return vazio;
+
+  const parecidos = history.filter(
+    (t) =>
+      t.type === type &&
+      t.status !== "cancelado" &&
+      t.category_id &&
+      limpar(t.description).includes(quem)
+  );
+  if (parecidos.length === 0) return vazio;
+
+  const maisComum = <K extends "category_id" | "client_id" | "project_id">(campo: K) => {
+    const contagem = new Map<string, number>();
+    parecidos.forEach((t) => {
+      const v = t[campo];
+      if (v) contagem.set(v, (contagem.get(v) ?? 0) + 1);
+    });
+    return Array.from(contagem.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  };
+
+  return {
+    type,
+    transfer: null,
+    category_id: maisComum("category_id"),
+    client_id: maisComum("client_id"),
+    project_id: maisComum("project_id"),
+    baseadoEm: parecidos.length,
+  };
+}

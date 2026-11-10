@@ -2,6 +2,8 @@
 
 import { useRouter } from "next/navigation";
 
+import { addMonths, monthKey, monthLabel, todayISO } from "@/lib/dates";
+
 import {
   Select,
   SelectContent,
@@ -16,15 +18,13 @@ interface MonthOption {
 }
 
 function buildMonthOptions(monthsBack: number): MonthOption[] {
-  const now = new Date();
-  const options: MonthOption[] = [];
-  for (let i = 0; i < monthsBack; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    const label = d.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
-    options.push({ value, label: label.charAt(0).toUpperCase() + label.slice(1) });
-  }
-  return options;
+  // Mes corrente no fuso da empresa, nao no do navegador nem em UTC.
+  const atual = monthKey(todayISO());
+  return Array.from({ length: monthsBack }, (_, i) => {
+    const value = addMonths(atual, -i);
+    const label = monthLabel(value, true);
+    return { value, label: label.charAt(0).toUpperCase() + label.slice(1) };
+  });
 }
 
 export function MonthSelector({ selectedMonth }: { selectedMonth: string }) {

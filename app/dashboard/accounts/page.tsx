@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -10,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { signedAmountForAccount } from "@/lib/finance";
+import { formatDate } from "@/lib/dates";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Dialog,
@@ -41,7 +42,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { accountsApi } from "@/hooks/use-accounts";
-import { transactionsApi } from "@/hooks/use-transactions";
+import { useAccountBalances } from "@/hooks/use-account-balances";
 import type { Account, AccountType } from "@/types/database";
 
 const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
@@ -57,6 +58,7 @@ const accountSchema = z.object({
   account: z.string().optional(),
   type: z.enum(["corrente", "poupanca", "investimento", "caixa"]),
   balance: z.coerce.number(),
+  is_active: z.boolean(),
 });
 
 type AccountFormValues = z.infer<typeof accountSchema>;
@@ -67,6 +69,7 @@ const defaultValues: AccountFormValues = {
   account: "",
   type: "corrente",
   balance: 0,
+  is_active: true,
 };
 
 function formatCurrency(value: number) {
@@ -75,27 +78,15 @@ function formatCurrency(value: number) {
 
 export default function AccountsPage() {
   const { data: accounts, isLoading } = accountsApi.useList();
-  const { data: transactions } = transactionsApi.useList();
   const createAccount = accountsApi.useCreate();
   const updateAccount = accountsApi.useUpdate();
   const deleteAccount = accountsApi.useDelete();
 
-  const netPaidByAccount = useMemo(() => {
-    const map = new Map<string, number>();
-    const paid = (transactions ?? []).filter((t) => t.status === "pago");
-
-    // Uma transferencia toca duas contas, entao o saldo e calculado por conta
-    // (a origem perde, o destino ganha) em vez de somar sobre account_id.
-    (accounts ?? []).forEach((account) => {
-      const total = paid.reduce(
-        (sum, t) => sum + signedAmountForAccount(t, account.id),
-        0
-      );
-      map.set(account.id, total);
-    });
-
-    return map;
-  }, [transactions, accounts]);
+  // Saldo vem do banco (visao v_account_balances), nao de uma soma no
+  // navegador: a mesma fonte do painel e dos alertas.
+  const { data: balances } = useAccountBalances();
+  const queryClient = useQueryClient();
+  const saldoDe = (id: string) => balances?.find((b) => b.id === id);
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Account | null>(null);
@@ -127,6 +118,7 @@ export default function AccountsPage() {
       account: account.account ?? "",
       type: account.type,
       balance: account.balance,
+      is_active: account.is_active ?? true,
     });
     setOpen(true);
   }
@@ -137,6 +129,8 @@ export default function AccountsPage() {
     } else {
       await createAccount.mutateAsync(values);
     }
+    // O saldo calculado depende do saldo inicial e da lista de contas.
+    await queryClient.invalidateQueries({ queryKey: ["transactions", "account-balances"] });
     setOpen(false);
   }
 
@@ -203,6 +197,7 @@ export default function AccountsPage() {
                     <Landmark className="size-4" />
                   </span>
                   {account.bank}
+                  {account.is_active === false && <Badge variant="outline">encerrada</Badge>}
                 </div>
               </TableCell>
               <TableCell className="text-muted-foreground">
@@ -211,8 +206,17 @@ export default function AccountsPage() {
               <TableCell>
                 <Badge variant="secondary">{ACCOUNT_TYPE_LABELS[account.type]}</Badge>
               </TableCell>
-              <TableCell>
-                {formatCurrency(account.balance + (netPaidByAccount.get(account.id) ?? 0))}
+              <TableCell
+                className={`tabular-nums ${
+                  (saldoDe(account.id)?.current_balance ?? 0) < 0 ? "font-medium text-destructive" : ""
+                }`}
+              >
+                {saldoDe(account.id) ? formatCurrency(saldoDe(account.id)!.current_balance) : "…"}
+                {saldoDe(account.id)?.last_movement && (
+                  <p className="text-xs font-normal text-muted-foreground">
+                    último lançamento em {formatDate(saldoDe(account.id)!.last_movement)}
+                  </p>
+                )}
               </TableCell>
               <TableCell>
                 <DropdownMenu>
@@ -292,6 +296,21 @@ export default function AccountsPage() {
                 <Input id="balance" type="number" step="0.01" {...register("balance")} />
               </div>
             </div>
+
+            <label className="flex cursor-pointer items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5 size-4 accent-primary"
+                {...register("is_active")}
+              />
+              <span>
+                Conta ativa
+                <span className="block text-xs text-muted-foreground">
+                  Conta encerrada continua no histórico e nos relatórios, mas sai da lista ao
+                  criar lançamentos.
+                </span>
+              </span>
+            </label>
 
             <DialogFooter>
               <Button type="submit" isLoading={isSubmitting}>

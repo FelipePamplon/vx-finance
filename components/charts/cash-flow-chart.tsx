@@ -26,9 +26,13 @@ function formatCurrency(value: number) {
 export function CashFlowChart({
   data,
   projectionStartMonth,
+  receitaLabel = "Receitas",
+  despesaLabel = "Despesas",
 }: {
   data: CashFlowPoint[];
   projectionStartMonth?: string;
+  receitaLabel?: string;
+  despesaLabel?: string;
 }) {
   const lastMonth = data[data.length - 1]?.month;
 
@@ -98,7 +102,7 @@ export function CashFlowChart({
         <Area
           type="monotone"
           dataKey="receita"
-          name="Receitas"
+          name={receitaLabel}
           stroke="#10b981"
           fill="url(#receitaGradient)"
           strokeWidth={2}
@@ -106,7 +110,7 @@ export function CashFlowChart({
         <Area
           type="monotone"
           dataKey="despesa"
-          name="Despesas"
+          name={despesaLabel}
           stroke="#ef4444"
           fill="url(#despesaGradient)"
           strokeWidth={2}

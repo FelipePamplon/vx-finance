@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { createClient } from "@/lib/supabase/client";
+import { fetchAllRows } from "@/lib/supabase/fetch-all";
 
 // This factory builds CRUD hooks for arbitrary tables without a generated
 // Supabase Database schema type, so supabase-js can't resolve its strict
@@ -20,16 +21,19 @@ export function createCrudHooks<T extends { id: string }>(
       queryKey,
       queryFn: async () => {
         const supabase = createClient();
-        const builder = supabase.from(table) as any; // eslint-disable-line @typescript-eslint/no-explicit-any
-        let query = builder.select(options?.select ?? "*");
-        if (options?.orderBy) {
-          query = query.order(options.orderBy, {
-            ascending: options.ascending ?? false,
-          });
-        }
-        const { data, error } = await query;
-        if (error) throw error;
-        return data as T[];
+        // Paginado: uma chamada so para em 1.000 linhas sem avisar, e as telas
+        // calculam saldo e DRE em cima desta lista.
+        return fetchAllRows<T>((from, to) => {
+          const builder = supabase.from(table) as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+          let query = builder.select(options?.select ?? "*");
+          if (options?.orderBy) {
+            query = query.order(options.orderBy, {
+              ascending: options.ascending ?? false,
+            });
+          }
+          // Desempate estavel, senao a paginacao pode repetir ou pular linhas.
+          return query.order("id", { ascending: true }).range(from, to);
+        });
       },
     });
   }

@@ -30,6 +30,7 @@ import { quotesApi, type QuoteInput } from "@/hooks/use-quotes";
 import { clientsApi } from "@/hooks/use-clients";
 import { projectsApi } from "@/hooks/use-projects";
 import { servicesApi } from "@/hooks/use-services";
+import { todayISO } from "@/lib/dates";
 import { QUOTE_STATUS_LABELS } from "@/lib/labels";
 import type { QuoteStatus, QuoteWithItems } from "@/types/database";
 
@@ -234,7 +235,7 @@ export function QuoteForm({ quote }: { quote?: QuoteWithItems }) {
       doc.setTextColor(...LIGHT_SLATE);
       const quoteNumberLabel = quote ? `Nº ${String(quote.number).padStart(4, "0")}` : "Rascunho não salvo";
       doc.text(quoteNumberLabel, rightX, 22, { align: "right" });
-      const issuedDate = quote?.created_at ? formatDate(quote.created_at.slice(0, 10)) : formatDate(new Date().toISOString().slice(0, 10));
+      const issuedDate = quote?.created_at ? formatDate(quote.created_at.slice(0, 10)) : formatDate(todayISO());
       doc.text(`Emitido em ${issuedDate}`, rightX, 27, { align: "right" });
 
       // Client / details block
