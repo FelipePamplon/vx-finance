@@ -90,3 +90,26 @@ export function signedAmountOnStatement(t: AmountLike): number {
   const amount = Number(t.amount) || 0;
   return t.type === "receita" ? amount : -amount;
 }
+
+/**
+ * Data em que o dinheiro se moveu (ou vai se mover): a data de CAIXA.
+ *
+ * `date` e a competencia - o mes a que a receita ou o gasto pertence. Para quase
+ * tudo as duas coincidem, mas nao para imposto: o DAS de outubro tem competencia
+ * 31/10 e sai da conta em novembro. Tela de caixa que lista pela competencia
+ * mostra esse pagamento em outubro, longe do resgate feito para cobri-lo, e o
+ * mes de novembro fica sem a saida - parece que o pagamento "nao entrou".
+ *
+ * Pago: data do pagamento. Em aberto: vencimento (quando o caixa vai sentir).
+ * O DRE e a Posicao Fiscal continuam usando `date`.
+ */
+export function cashDate(t: {
+  date: string;
+  due_date?: string | null;
+  paid_date?: string | null;
+  status: string;
+}): string {
+  if (t.status === "pago") return t.paid_date ?? t.date;
+  if (t.status === "pendente") return t.due_date ?? t.date;
+  return t.date;
+}

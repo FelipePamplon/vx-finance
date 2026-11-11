@@ -45,8 +45,8 @@ import { categoriesApi } from "@/hooks/use-categories";
 import { clientsApi } from "@/hooks/use-clients";
 import { projectsApi } from "@/hooks/use-projects";
 import { transactionsApi } from "@/hooks/use-transactions";
-import { formatDate } from "@/lib/dates";
-import { signedAmountTotal } from "@/lib/finance";
+import { formatDate, monthKey, monthLabel } from "@/lib/dates";
+import { cashDate, signedAmountTotal } from "@/lib/finance";
 import { formatCurrency, round2 } from "@/lib/format";
 import {
   TRANSACTION_STATUS_BADGE_VARIANT as STATUS_BADGE_VARIANT,
@@ -58,6 +58,7 @@ import {
   applyLedgerFilters,
   EMPTY_FILTERS,
   filtersFromParams,
+  sortByCashDate,
   type LedgerFilterState,
 } from "@/lib/ledger-filters";
 import { getAttachmentUrl } from "@/lib/storage";
@@ -103,8 +104,10 @@ function TransactionsInner() {
   const [bulkClient, setBulkClient] = useState(KEEP);
   const [bulkBusy, setBulkBusy] = useState(false);
 
+  // Fluxo de caixa e pela data em que o dinheiro se moveu, nao pela competencia:
+  // o DAS de outubro pago em 10/11 aparece em 10/11, ao lado do resgate que o cobriu.
   const filtered = useMemo(
-    () => applyLedgerFilters(transactions ?? [], filters),
+    () => sortByCashDate(applyLedgerFilters(transactions ?? [], filters, "caixa")),
     [transactions, filters]
   );
 
@@ -234,7 +237,7 @@ function TransactionsInner() {
         <div>
           <h1 className="text-2xl font-semibold text-foreground">Fluxo de Caixa</h1>
           <p className="text-sm text-muted-foreground">
-            Lançamentos de receitas, despesas e transferências
+            Receitas, despesas e transferências, na data em que o dinheiro se moveu
           </p>
         </div>
         <Button
@@ -383,7 +386,12 @@ function TransactionsInner() {
           )}
 
           {rows.map((t) => {
+            const dataCaixa = cashDate(t);
+            // Competencia em outro mes (imposto, despesa paga depois): avisa na linha.
+            const outraCompetencia =
+              t.type !== "transferencia" && monthKey(t.date) !== monthKey(dataCaixa);
             const vinculos = [
+              outraCompetencia ? `competência ${monthLabel(monthKey(t.date))}` : null,
               t.clients?.company,
               t.projects?.name,
               t.partners?.name,
@@ -401,7 +409,10 @@ function TransactionsInner() {
                   />
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-muted-foreground">
-                  {formatDate(t.date)}
+                  {formatDate(dataCaixa)}
+                  {t.status === "pendente" && (
+                    <span className="block text-xs">vencimento</span>
+                  )}
                 </TableCell>
                 <TableCell className="min-w-[220px]">
                   <div className="flex items-center gap-1.5">
