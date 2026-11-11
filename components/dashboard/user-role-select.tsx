@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
@@ -27,20 +27,31 @@ export function UserRoleSelect({
   currentRole: string;
 }) {
   const [isPending, startTransition] = useTransition();
+  // Controlado: se o banco recusar, o seletor volta ao papel que vale de verdade
+  // em vez de exibir um papel que nao foi salvo.
+  const [role, setRole] = useState(currentRole);
 
-  function handleChange(role: string) {
+  function handleChange(next: string) {
+    const anterior = role;
+    setRole(next);
     startTransition(async () => {
       try {
-        await updateUserRole(userId, role);
-        toast.success("Papel atualizado.");
+        const result = await updateUserRole(userId, next);
+        if ("error" in result) {
+          setRole(anterior);
+          toast.error(result.error);
+        } else {
+          toast.success("Papel atualizado.");
+        }
       } catch {
+        setRole(anterior);
         toast.error("Erro ao atualizar papel.");
       }
     });
   }
 
   return (
-    <Select defaultValue={currentRole} onValueChange={handleChange} disabled={isPending}>
+    <Select value={role} onValueChange={handleChange} disabled={isPending}>
       <SelectTrigger className="w-40">
         <SelectValue />
       </SelectTrigger>
