@@ -14,7 +14,8 @@ import {
 import { addDays, addMonthsToDate, diffDays, monthEnd, monthsBetween, todayISO } from "@/lib/dates";
 import { runHealthChecks } from "@/lib/health";
 import { apurarFiscal } from "@/lib/fiscal";
-import { applyLedgerFilters, EMPTY_FILTERS } from "@/lib/ledger-filters";
+import { cashDate } from "@/lib/finance";
+import { applyLedgerFilters, EMPTY_FILTERS, sortByCashDate } from "@/lib/ledger-filters";
 import { suggestEntry } from "@/lib/reconciliation";
 
 let n = 0;
@@ -185,6 +186,19 @@ assert.equal(f({ q: "socios" }), 4); ok("busca ignora acento (socios → Sócios
 assert.equal(f({ conta: "porq" }), 3); ok("filtro por conta pega as duas pontas da transferência");
 assert.equal(f({ from: "2026-10-01", to: "2026-10-31", tipo: "despesa" }), 4); assert.equal(f({ min: "10000" }), 7);
 assert.equal(applyLedgerFilters([tx({ date: "2026-06-05", amount: 5250 }), ...real], { ...EMPTY_FILTERS, categoria: "sem" }).length, 1); ok("'sem categoria' não conta transferência");
+
+console.log("DATA DE CAIXA x COMPETENCIA");
+// O caso do usuario: DAS de outubro (competencia 31/10) pago em 10/11, coberto
+// por um resgate de CDB feito no mesmo dia. Na tela de caixa ele sumia de novembro.
+const dasOut = tx({ date: "2026-10-31", due_date: "2026-11-20", paid_date: "2026-11-10", amount: 3819.17, categories: cat("Simples Nacional (DAS)", "imposto") });
+const resgate = tx({ date: "2026-11-10", type: "transferencia", amount: 3800, account_id: "porq", transfer_account_id: "inter" });
+const aberto = tx({ date: "2026-11-30", due_date: "2026-12-20", status: "pendente", amount: 500, categories: cat("Simples Nacional (DAS)", "imposto") });
+assert.equal(cashDate(dasOut), "2026-11-10"); assert.equal(cashDate(aberto), "2026-12-20"); ok("pago vale a data do pagamento; em aberto, o vencimento");
+const nov = { ...EMPTY_FILTERS, from: "2026-11-01", to: "2026-11-30" };
+assert.equal(applyLedgerFilters([dasOut, resgate, aberto], nov, "caixa").length, 2); ok("caixa de novembro tem o DAS pago em 10/11 e o resgate");
+assert.deepEqual(applyLedgerFilters([dasOut, resgate, aberto], nov).map((t: any) => t.id), [resgate.id, aberto.id]); ok("na competência o DAS continua em outubro (DRE não muda)");
+assert.equal(applyLedgerFilters([dasOut], { ...EMPTY_FILTERS, from: "2026-10-01", to: "2026-10-31" }, "caixa").length, 0); ok("e não aparece no caixa de outubro");
+assert.deepEqual(sortByCashDate([dasOut, resgate, aberto]).map((t: any) => t.id), [aberto.id, resgate.id, dasOut.id]); ok("lista ordenada pela data de caixa, mais recente primeiro");
 
 console.log("SUGESTAO NA CONCILIACAO");
 const hist: any[] = [

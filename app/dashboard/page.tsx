@@ -25,9 +25,11 @@ import {
   sectionOf,
 } from "@/lib/analytics";
 import { addMonths, formatDate, monthKey, monthLabel, todayISO } from "@/lib/dates";
+import { cashDate } from "@/lib/finance";
 import { formatCurrency, formatPercent } from "@/lib/format";
 import { healthScore, runHealthChecks } from "@/lib/health";
 import { formatTransactionAmount, transactionAmountTone } from "@/lib/labels";
+import { sortByCashDate } from "@/lib/ledger-filters";
 import { loadLedger } from "@/lib/ledger-server";
 import { createClient } from "@/lib/supabase/server";
 
@@ -162,7 +164,8 @@ export default async function DashboardPage({
     .sort((a, b) => b.value - a.value)
     .slice(0, 6);
 
-  const recentes = transactions.filter((t) => t.status !== "cancelado").slice(0, 8);
+  // O que se moveu por ultimo no caixa (pagamento), nao a ultima competencia.
+  const recentes = sortByCashDate(pagos).slice(0, 8);
 
   return (
     <div className="flex flex-col gap-6">
@@ -357,13 +360,12 @@ export default async function DashboardPage({
                 <div className="flex min-w-0 flex-col">
                   <span className="truncate text-sm font-medium text-foreground">{t.description}</span>
                   <span className="text-xs text-muted-foreground">
-                    {formatDate(t.date)}
+                    {formatDate(cashDate(t))}
                     {t.type === "transferencia"
                       ? " · Transferência"
                       : t.categories
                         ? ` · ${t.categories.name}`
                         : " · Sem categoria"}
-                    {t.status === "pendente" ? " · pendente" : ""}
                   </span>
                 </div>
                 <span

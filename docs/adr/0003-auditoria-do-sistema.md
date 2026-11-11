@@ -133,10 +133,24 @@ lança a linha faltante com categoria sugerida pelo histórico e reconhece
 aplicação/resgate como transferência; exportação CSV/Excel/PDF em todos os
 relatórios.
 
+### 9. Telas de caixa usam a data de caixa (adendo de 11/11/2026)
+
+Ao mover o imposto para a competência (item 5), o Fluxo de Caixa continuou
+listando e filtrando por `date`. Resultado: o DAS de outubro, pago em 10/11,
+saía da conta certa (o saldo fechava) mas aparecia na lista em 31/10 — fora de
+novembro e longe do resgate de CDB feito no mesmo dia para cobri-lo. Para quem
+olha a tela, o pagamento "não entrou na conta".
+
+`cashDate` (`lib/finance.ts`): pago → data do pagamento; em aberto → vencimento.
+O Fluxo de Caixa (tela e relatório), o período do filtro nessas telas e as
+"Últimas movimentações" do painel passam a usar essa data; a linha mostra a
+competência quando ela cai em outro mês. DRE, Posição Fiscal, projetos, clientes
+e sócios seguem na competência. O Extrato por conta já usava a data do pagamento.
+
 ## Consequências
 
 Relatórios: Fluxo, DRE, DRE mensal, Posição Fiscal, Projetos, Clientes, Sócios,
-Extrato por conta. Suíte `npm test` com 51 verificações do motor (datas, DRE,
+Extrato por conta. Suíte `npm test` com 56 verificações do motor (datas, DRE,
 sócios, projetos, projeção, saúde, fiscal, filtros, conciliação), sem
 dependência nova.
 

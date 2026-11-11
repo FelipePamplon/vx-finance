@@ -1,4 +1,5 @@
 import { sectionOf } from "@/lib/analytics";
+import { cashDate } from "@/lib/finance";
 import type {
   DreSection,
   TransactionStatus,
@@ -78,17 +79,26 @@ function vinculo(filtro: string, valor: string | null): boolean {
   return valor === filtro;
 }
 
+/**
+ * Em que data o periodo (De/Ate) e aplicado.
+ * "competencia": o mes a que o lancamento pertence - DRE, projetos, clientes.
+ * "caixa": o dia em que o dinheiro se moveu - Fluxo de Caixa.
+ */
+export type DateBasis = "competencia" | "caixa";
+
 export function applyLedgerFilters(
   rows: TransactionWithRelations[],
-  f: LedgerFilterState
+  f: LedgerFilterState,
+  basis: DateBasis = "competencia"
 ): TransactionWithRelations[] {
   const termos = normalizar(f.q).split(/\s+/).filter(Boolean);
   const min = f.min === "" ? null : Number(f.min);
   const max = f.max === "" ? null : Number(f.max);
 
   return rows.filter((t) => {
-    if (f.from && t.date < f.from) return false;
-    if (f.to && t.date > f.to) return false;
+    const data = basis === "caixa" ? cashDate(t) : t.date;
+    if (f.from && data < f.from) return false;
+    if (f.to && data > f.to) return false;
     if (f.tipo && t.type !== f.tipo) return false;
 
     if (f.status === "ativos") {
@@ -137,4 +147,14 @@ export function applyLedgerFilters(
 
     return true;
   });
+}
+
+/** Mais recente primeiro, pela data de caixa. Empate: o lancado por ultimo. */
+export function sortByCashDate<T extends TransactionWithRelations>(rows: T[]): T[] {
+  return [...rows].sort(
+    (a, b) =>
+      cashDate(b).localeCompare(cashDate(a)) ||
+      b.created_at.localeCompare(a.created_at) ||
+      b.id.localeCompare(a.id)
+  );
 }

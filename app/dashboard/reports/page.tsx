@@ -34,7 +34,7 @@ import { projectsApi } from "@/hooks/use-projects";
 import { transactionsApi } from "@/hooks/use-transactions";
 import { formatDate, todayISO, yearStart } from "@/lib/dates";
 import { exportCsv, exportExcel, exportPdf, type ExportTable } from "@/lib/export";
-import { signedAmountTotal } from "@/lib/finance";
+import { cashDate, signedAmountTotal } from "@/lib/finance";
 import { formatCurrency, round2 } from "@/lib/format";
 import {
   TRANSACTION_STATUS_BADGE_VARIANT as STATUS_BADGE_VARIANT,
@@ -47,6 +47,7 @@ import {
   applyLedgerFilters,
   EMPTY_FILTERS,
   filtersFromParams,
+  sortByCashDate,
   type LedgerFilterState,
 } from "@/lib/ledger-filters";
 import type { TransactionWithRelations } from "@/types/database";
@@ -68,8 +69,10 @@ function fluxoExport(rows: TransactionWithRelations[], periodo: string): ExportT
   return {
     title: "Fluxo de Caixa",
     subtitle: periodo,
-    head: ["Data", "Descrição", "Categoria", "Conta", "Cliente", "Projeto", "Tipo", "Valor", "Status"],
+    head: ["Data", "Competência", "Descrição", "Categoria", "Conta", "Cliente", "Projeto", "Tipo", "Valor", "Status"],
     body: rows.map((t) => [
+      // Data de caixa (pagamento, ou vencimento se em aberto); a competencia vai ao lado.
+      formatDate(cashDate(t)),
       formatDate(t.date),
       t.description,
       t.type === "transferencia" ? "Transferência" : (t.categories?.name ?? "Sem categoria"),
@@ -129,8 +132,16 @@ function ReportsInner() {
     [transactions]
   );
 
+  // Fluxo de caixa recorta e ordena pela data em que o dinheiro se moveu. Os
+  // demais relatorios (DRE, projetos, clientes) seguem a competencia: o DAS de
+  // outubro e imposto de outubro no DRE e saida de novembro no caixa.
+  const fluxoRows = useMemo(
+    () => sortByCashDate(applyLedgerFilters(transactions ?? [], filters, "caixa")),
+    [transactions, filters]
+  );
+
   const summary = useMemo(() => {
-    const validos = filtered.filter((t) => t.status !== "cancelado");
+    const validos = fluxoRows.filter((t) => t.status !== "cancelado");
     const entradas = validos
       .filter((t) => signedAmountTotal(t) > 0)
       .reduce((s, t) => s + signedAmountTotal(t), 0);
@@ -138,7 +149,7 @@ function ReportsInner() {
       .filter((t) => signedAmountTotal(t) < 0)
       .reduce((s, t) => s - signedAmountTotal(t), 0);
     return { entradas: round2(entradas), saidas: round2(saidas), resultado: round2(entradas - saidas) };
-  }, [filtered]);
+  }, [fluxoRows]);
 
   const periodo =
     filters.from || filters.to
@@ -171,7 +182,7 @@ function ReportsInner() {
           periodo
         );
       default:
-        return fluxoExport(filtered, periodo);
+        return fluxoExport(fluxoRows, periodo);
     }
   }
 
@@ -256,6 +267,12 @@ function ReportsInner() {
             ))}
           </div>
 
+          <p className="text-xs text-muted-foreground">
+            Período pela data do pagamento (ou do vencimento, se em aberto). O DRE usa a
+            competência — por isso um imposto pago em novembro aparece aqui em novembro e
+            lá em outubro.
+          </p>
+
           <Table>
             <TableHeader>
               <TableRow>
@@ -275,19 +292,19 @@ function ReportsInner() {
                   </TableCell>
                 </TableRow>
               )}
-              {!isLoading && filtered.length === 0 && (
+              {!isLoading && fluxoRows.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center text-muted-foreground">
                     Nenhum lançamento no filtro selecionado.
                   </TableCell>
                 </TableRow>
               )}
-              {filtered.slice(0, 300).map((t) => {
+              {fluxoRows.slice(0, 300).map((t) => {
                 const k = transactionAmountTone(t);
                 return (
                   <TableRow key={t.id}>
                     <TableCell className="whitespace-nowrap text-muted-foreground">
-                      {formatDate(t.date)}
+                      {formatDate(cashDate(t))}
                     </TableCell>
                     <TableCell className="min-w-[220px]">{t.description}</TableCell>
                     <TableCell className="text-muted-foreground">
@@ -319,9 +336,9 @@ function ReportsInner() {
               })}
             </TableBody>
           </Table>
-          {filtered.length > 300 && (
+          {fluxoRows.length > 300 && (
             <p className="text-xs text-muted-foreground">
-              Mostrando os 300 primeiros de {filtered.length}. A exportação traz todos.
+              Mostrando os 300 primeiros de {fluxoRows.length}. A exportação traz todos.
             </p>
           )}
         </>
