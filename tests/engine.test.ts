@@ -17,6 +17,7 @@ import { apurarFiscal } from "@/lib/fiscal";
 import { cashDate } from "@/lib/finance";
 import { applyLedgerFilters, EMPTY_FILTERS, sortByCashDate } from "@/lib/ledger-filters";
 import { suggestEntry } from "@/lib/reconciliation";
+import { createJwtSkewRetryFetch } from "@/lib/jwt-retry";
 
 let n = 0;
 const ok = (nome: string) => { n++; console.log(`  ok  ${nome}`); };
@@ -215,4 +216,31 @@ assert.equal(s.transfer, "aplicacao"); ok("aplicação de CDB vira transferênci
 s = suggestEntry({ date: "2026-11-04", description: "Pix enviado Fulano Desconhecido", amount: -50 }, hist);
 assert.equal(s.category_id, null); assert.equal(s.baseadoEm, 0); ok("favorecido novo: sem palpite");
 
-console.log(`\n${n} verificações passaram.`);
+console.log("SESSAO RENOVADA (JWT issued at future)");
+(async () => {
+  // Respostas iguais as do log de 16/11: 401 PGRST303, depois 200.
+  const r401 = () => new Response('{"code":"PGRST303","message":"JWT issued at future"}', { status: 401 });
+  const r200 = () => new Response("[]", { status: 200 });
+  const falso = (seq: (() => Response)[]) => {
+    let i = 0;
+    const fn = (async () => seq[Math.min(i++, seq.length - 1)]()) as unknown as typeof fetch;
+    return { fn, chamadas: () => i };
+  };
+  const esperas: number[] = [];
+  const dormir = async (ms: number) => { esperas.push(ms); };
+
+  const a = falso([r401, r200]);
+  const ra = await createJwtSkewRetryFetch(a.fn, { dormir })("https://x/rest/v1/transactions");
+  assert.equal(ra.status, 200); assert.equal(a.chamadas(), 2); ok("token recém-renovado recusado: espera e a segunda tentativa passa");
+
+  const b = falso([r401]);
+  const rb = await createJwtSkewRetryFetch(b.fn, { dormir, tentativas: 3 })("https://x");
+  assert.equal(rb.status, 401); assert.equal(b.chamadas(), 4); ok("desiste depois de 3 novas tentativas e devolve o erro");
+  assert.deepEqual(esperas.slice(-3), [1000, 2000, 3000]); ok("espera crescente: 1s, 2s, 3s");
+
+  const outro = falso([() => new Response('{"code":"PGRST301","message":"JWT expired"}', { status: 401 })]);
+  await createJwtSkewRetryFetch(outro.fn, { dormir })("https://x");
+  assert.equal(outro.chamadas(), 1); ok("outro 401 (sessão expirada) não é repetido");
+
+  console.log(`\n${n} verificações passaram.`);
+})().catch((e) => { console.error(e); process.exit(1); });
